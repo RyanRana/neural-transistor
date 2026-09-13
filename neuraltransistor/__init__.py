@@ -79,9 +79,10 @@ def budget(ir: CircuitIR, kb: float, max_drive_err: float = 0.10):
     return fit_budget(ir, kb, max_drive_err=max_drive_err)
 
 
-def emit_ros2(ir: CircuitIR, morph, outdir: str, package: str = "flyforge_controller"):
+def emit_ros2(ir: CircuitIR, morph, outdir: str,
+              package: str = "neuraltransistor_controller", retarget_plan=None):
     from neuraltransistor.target.ros2 import emit_ros2 as _e
-    return _e(ir, morph, outdir, package=package)
+    return _e(ir, morph, outdir, package=package, retarget_plan=retarget_plan)
 
 
 def morphology(name: str = None, urdf: str = None, **kw):

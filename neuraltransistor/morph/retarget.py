@@ -60,6 +60,77 @@ SOURCE_PREFERENCE = {
 }
 
 
+def infer_sources(morph) -> dict:
+    """Work out which fly leg drives each limb, for a morphology we did not author.
+
+    A URDF gives you limb names its author chose -- ``FL_coxa``, ``leg_2``,
+    ``front_right_hip`` -- not the tidy keys in SOURCE_PREFERENCE. Without this, importing
+    a real robot produces zero driven joints, which is the "any robot" promise failing
+    silently at the last step.
+
+    Three attempts, in order:
+      1. the builtin table, if the morphology came from BUILTIN
+      2. name matching: front/mid/hind and left/right tokens in the limb name
+      3. positional fallback: order the limbs, alternate sides, and spread them over the
+         fly's three segments. Crude, and reported as such, but it means a robot always
+         gets *a* mapping rather than nothing.
+    """
+    table = SOURCE_PREFERENCE.get(morph.name)
+    if table and all(l.name in table for l in morph.limbs):
+        return dict(table)
+
+    FRONT = ("front", "fore", "_f", "f_", "fl", "fr", "1")
+    HIND = ("hind", "rear", "back", "_h", "h_", "hl", "hr", "3")
+    MID = ("mid", "middle", "_m", "m_", "ml", "mr", "2")
+    LEFT = ("left", "_l", "l_", "fl", "hl", "ml")
+    RIGHT = ("right", "_r", "r_", "fr", "hr", "mr")
+
+    def tok(name, keys):
+        n = name.lower()
+        return any(k in n for k in keys)
+
+    out, named = {}, True
+    for limb in morph.limbs:
+        n = limb.name.lower()
+        seg = "front" if tok(n, FRONT) else ("hind" if tok(n, HIND) else
+                                             ("middle" if tok(n, MID) else None))
+        side = limb.side or ("L" if tok(n, LEFT) else ("R" if tok(n, RIGHT) else None))
+        if seg is None or side is None:
+            named = False
+            break
+        out[limb.name] = (seg, side)
+    if named and out:
+        return out
+
+    # positional fallback
+    segs = ["front", "middle", "hind"]
+    out = {}
+    for i, limb in enumerate(morph.limbs):
+        side = limb.side or ("L" if i % 2 == 0 else "R")
+        n_pairs = max(len(morph.limbs) // 2, 1)
+        seg = segs[min(int(i // 2 * 3 / n_pairs), 2)] if n_pairs > 1 else "hind"
+        out[limb.name] = (seg, side)
+    return out
+
+
+def infer_phases(morph, gait: Optional[str]) -> tuple:
+    """Gait phases for a morphology whose limb names we did not choose."""
+    if gait and gait in GAITS:
+        table = GAITS[gait]
+        if all(l.name in table for l in morph.limbs):
+            return table, gait
+    n = len(morph.limbs)
+    if n == 6:
+        base, name = [0.0, .5, .5, 0.0, 0.0, .5], gait or "tripod"
+    elif n == 4:
+        base, name = [0.0, .5, .5, 0.0], gait or "trot"
+    elif n == 2:
+        base, name = [0.0, .5], gait or "alternate"
+    else:
+        base, name = [i / max(n, 1) for i in range(n)], gait or f"wave{n}"
+    return {l.name: base[i % len(base)] for i, l in enumerate(morph.limbs)}, name
+
+
 @dataclass
 class LimbBinding:
     limb: str
@@ -105,10 +176,10 @@ def retarget(morph: MorphologySpec, decodes: list[MotorDecode],
                 for i, l in enumerate(morph.limbs)}
         gait = gait or f"ring{n}"
     else:
-        if gait not in GAITS:
+        if gait and gait not in GAITS and morph.name in SOURCE_PREFERENCE:
             raise KeyError(f"unknown gait {gait!r}; have {sorted(GAITS)}")
-        phases = GAITS[gait]
-        pref = SOURCE_PREFERENCE.get(morph.name, {})
+        phases, gait = infer_phases(morph, gait)
+        pref = infer_sources(morph)
 
     by_src: dict = {}
     for d in decodes:

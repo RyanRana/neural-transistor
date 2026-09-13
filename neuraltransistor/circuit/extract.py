@@ -292,6 +292,18 @@ LIBRARY = {
             "command the brain issues passes through here.",
         closure="none",
     ),
+    "looming_pathway": dict(
+        sel=Sel.type(r"^(L[1-5]$|Tm1$|Tm2$|Tm4$|Tm9$|Tm20$|Tm5Y$|T5[a-d]$|T4[a-d]$"
+                     r"|LPLC[0-9]|LC4$|LPi|Y3$|DNp0[1-3]$)"),
+        doc="The full OFF collision pathway, retina to escape command: lamina monopolar "
+            "cells, medulla transmedullary cells, T4/T5 motion detectors, LC4 and LPLC2 "
+            "looming detectors, and DNp01 -- the giant fiber itself. The only circuit "
+            "here that can be driven directly by a camera. Note DNp01, not GF: the types "
+            "named GFC1-4 are giant-fiber-COUPLED interneurons in the nerve cord, and "
+            "selecting those instead gives you a circuit whose output is disconnected "
+            "from vision.",
+        closure="none",
+    ),
     "gate": dict(
         sel=Sel.type(r"^(KC|MBON|PAM|PPL|PPM|APL|DPM)"),
         doc="Mushroom body: sparse Kenyon-cell context code, 97 MBON valence "

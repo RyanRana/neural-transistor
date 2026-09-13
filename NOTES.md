@@ -29,3 +29,11 @@ running log of things that turned out to be true. one line each.
 - greenwaves went into liquidation jan 2025 and intel archived every lava repo may 2026, so gap9 and loihi2 both quietly stopped being real options while nobody updated the blog posts
 - speck can't do this at all and not for the reason you'd guess, fan out is 2 per core not per neuron so arbitrary graphs are structurally inexpressible
 - compass is 26.6% dense so it runs on stock dense cmsis-nn kernels with zero new work, optic_motion would cost 502x to densify
+- the connectome-derived giant fiber fires 56ms before contact and its onset scales with l/|v| at r=-0.9999, angular size at onset is 19.9 +- 2.7 deg across an 8x range, that constant-angle-threshold thing is exactly what a real looming detector does
+- looming works where the compass didn't because it's feedforward, no attractor needed, so unfitted dynamics still get you the right qualitative behaviour
+- DNp01 is the giant fiber, NOT the types called GF*, those are GFC1-4 which are giant-fiber-coupled interneurons down in the nerve cord with zero visual input, i wired the wrong cells first
+- DNp01's top two inputs in the connectome are LC4 (6362 syn) and LPLC2 (4710 syn), which is exactly the two terms in the published von reyn model, nice independent confirmation
+- torch backend gives 176 free parameters for 889,288 edges, per cell type not per synapse, per-synapse would fit anything which is the same as fitting nothing
+- shiu's 0.275 mV synaptic scale is right for their units and puts you 100x over threshold on raw synapse counts, init from 1/median total input instead and you land at 8% firing which is about what a fly does
+- \b in a regex doesn't match across an underscore so flyforge_controller survived the rename, classic
+- urdf limbs are called FL_coxa not FL so the retargeter bound zero joints, had to infer front/hind/left/right from the name with a positional fallback, now 12/12

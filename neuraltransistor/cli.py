@@ -108,8 +108,17 @@ def cmd_emit(args):
             print(f"urdf: {morph} ({rep['n_actuated']} actuated joints)")
         else:
             morph = M.BUILTIN[args.morph]()
-        r = emit_ros2(ir, morph, args.out)
-        print(f"ros2 package: {r['package']} ({r['joints']} joints @ {r['control_hz']}Hz)")
+        plan = None
+        try:
+            from neuraltransistor.morph import retarget as _R, spec as _M
+            conn = _conn(args)
+            legs = from_library(conn, "legs_all")
+            plan = _R.retarget(morph, _M.decode_motor(legs, conn.neurons), gait=args.gait)
+        except Exception as e:
+            print(f"  (no motor retarget: {type(e).__name__}: {e})")
+        r = emit_ros2(ir, morph, args.out, retarget_plan=plan)
+        print(f"ros2 package: {r['package']} "
+              f"({r['joints_driven']}/{r['joints']} joints driven @ {r['control_hz']}Hz)")
         for f in r["files"]:
             print("   ", f)
 
@@ -370,7 +379,7 @@ def main(argv=None):
     m.add_argument("--target", choices=["mcu", "ros2"], default="mcu")
     m.add_argument("--bits", type=int, default=8)
     m.add_argument("--morph", default="hexapod")
-    m.add_argument("--urdf"); m.set_defaults(fn=cmd_emit)
+    m.add_argument("--urdf"); m.add_argument("--gait"); m.set_defaults(fn=cmd_emit)
 
     mo = sub.add_parser("morph", help="inspect morphology retargeting")
     mo.add_argument("--morph", default="hexapod")
