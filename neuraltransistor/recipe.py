@@ -194,7 +194,7 @@ RECIPES = {
     "hexapod-walker": Recipe(
         name="hexapod-walker",
         what="Six legs, tripod gait. The fly's native layout, so no retargeting loss.",
-        circuit="legs_all", morphology="hexapod", gait="tripod",
+        circuit="legs", morphology="hexapod", gait="tripod",
         sensor="proprioception", target="ESP32-S3", p_real=0.95, control_hz=200,
         notes=["All six leg circuits bind, including the intersegmental interneurons "
                "that coordinate them."]),
@@ -203,20 +203,20 @@ RECIPES = {
         name="quadruped-walker",
         what="Four legs, trot. Middle-leg circuits still run and still shape phase; "
              "only their motor output goes unused.",
-        circuit="legs_all", morphology="quadruped", gait="trot",
+        circuit="legs", morphology="quadruped", gait="trot",
         sensor="proprioception", target="ESP32-S3", p_real=0.97, control_hz=200),
 
     "biped-walker": Recipe(
         name="biped-walker",
         what="Two legs from the hind-leg pair, which are the fly's propulsive legs.",
-        circuit="leg_T3", morphology="biped", gait="alternate",
+        circuit="leg3", morphology="biped", gait="alternate",
         sensor="proprioception", target="STM32H743", p_real=0.95, control_hz=200),
 
     "microuav-collision": Recipe(
         name="microuav-collision",
         what="Collision avoidance for a 27 g quadrotor. Camera to escape command, "
              "no training data anywhere in the loop.",
-        circuit="looming", morphology="winged", sensor="event",
+        circuit="collision", morphology="winged", sensor="event",
         target="STM32F405", p_real=0.97, control_hz=250,
         notes=["STM32F405 is the Crazyflie 2.x flight controller -- the only MCU in "
                "the device table proven airborne on a sub-30 g robot.",
@@ -235,7 +235,7 @@ RECIPES = {
         name="valence-gate",
         what="The smallest useful thing here: 97 MBONs plus their dopaminergic gate, "
              "as a learned good/bad signal that modulates everything downstream.",
-        circuit="gate_readout", morphology="modular", sensor="none",
+        circuit="valence", morphology="modular", sensor="none",
         target="nRF52840", p_real=0.90, weight_bits=8, control_hz=100,
         notes=["Kilobyte-scale. Fits every device in the table, including the "
                "96 KB-SRAM STM32F401."]),

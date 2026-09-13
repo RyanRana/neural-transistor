@@ -1,138 +1,211 @@
 # Neural Transistor
 
-**Control circuits for small robots, compiled from a fly brain. No training data.**
+Compile circuits from a fly connectome into freestanding C for microcontrollers.
 
-<img src="docs/img/ui.png" width="100%" alt="Neural Transistor">
+`neuraltransistor` reads the published *Drosophila* male-CNS connectome, extracts a named
+circuit as a sparse signed graph, prunes it against a measured noise model, quantizes it
+to int8, and emits C99 with no `malloc`, no libc beyond `memset`, and no floating point
+in the tick loop. The emitted code is bit-identical to the reference implementation and
+builds clean under `-Wall -Wextra -Werror`.
 
----
+There is no training data and no training step. Structure and sign come from the
+measurement. Only the biophysics — time constants, thresholds, gains — is free, and
+fitting those is a separate, optional stage.
 
-## The problem
+**Status:** the compiler is complete and verified, and every circuit below cross-compiles
+for Cortex-M and boots in an emulator computing bit-identical spikes. Nothing has run on
+real silicon and no power figure here is measured; see [Limitations](#limitations).
 
-Your robot needs to not hit things, or walk, or know which way it's pointing. The usual
-answer is to train a network — which needs a dataset you don't have, a GPU you can't
-carry, and weeks you'd rather not spend.
+## Requirements
 
-A fly does all three on about a milliwatt. The complete wiring diagram of its nervous
-system was published and is free. Nobody had turned it into code you can flash.
+- Python 3.10+, a C99 compiler
+- `arm-none-eabi-gcc` and `qemu-system-arm` for `ntx firmware` (optional; the eval
+  suite skips the cross-boot check rather than failing when they are absent)
+- ~1.1 GB for the connectome release, ~160 MB for the built index
+- `torch` only if you use `neuraltransistor.train`
 
-This does. You get a `.c` file.
-
-```bash
-ntx quickstart              # downloads the data, builds, emits C. One command.
-```
-
-```
-[6] emitting C into out/
-  C emit: 452 neurons / 27,873 edges | flash 110.5 KB, ram 4.0 KB | w8 i16
-    out/compass.h  out/compass.c  out/compass_runtime.c
-[7] which chips it fits
-  9 of 9: STM32F405, STM32F401, STM32H743, STM32U575, nRF52840, RP2350, ESP32-S3, ...
-```
-
-## What you can build
-
-| circuit | does | flash | RAM | runs on |
-|---|---|--:|--:|---|
-| `looming` | **collision detector** — fires before impact | 762 KB | 66 KB | STM32F405 (the Crazyflie MCU) |
-| `compass` | **heading estimator** — bearing with no GPS | 110 KB | 4 KB | anything, down to a 96 KB F401 |
-| `legs_all` | **gait controller** — 6 legs, phase-locked | 1.2 MB | 104 KB | ESP32-S3 |
-| `leg_T3` | **single-leg controller** | 289 KB | 28 KB | STM32H743 |
-| `gate_readout` | **valence gate** — learned good/bad, multiplies downstream gain | 50 KB | 4 KB | everything |
-| `descending` | **command bus** — all 1,314 brain→body lines | 239 KB | 12 KB | everything |
-
-`ntx list` for the rest. Sizes are measured, at int8 with a stated confidence threshold.
-
-## Does it actually work?
-
-One circuit is proven, one is proven *not* to, and the honesty about which is the point.
-
-**Collision detection works.** Driven by a camera, the compiled circuit fires **56 ms
-before impact**, its onset scales with approach speed at **r = −0.9999**, and it triggers
-at a constant object size (**19.9 ± 2.7°** across an 8× speed range). Linear speed scaling
-plus a fixed size threshold are the two things that define a real collision detector, and
-both fall out of the wiring with zero tuning.
-
-<img src="docs/img/gf-model.png" width="100%" alt="collision response">
-
-**Heading doesn't work yet.** The compass forms a correct bearing estimate while it has
-input and loses it the instant input stops — at *every* gain setting across a 250× sweep.
-Wiring gives you structure, not memory. Fixing it needs the fitting stage
-(`ntx` + `neuraltransistor.train`), which is built and running but has not closed it.
-
-That difference is structural: collision detection is feed-forward, heading needs a
-self-sustaining loop.
-
-## Form factors
-
-<img src="docs/img/form-factors.png" width="100%" alt="form factors">
-
-Motor outputs are labelled by the muscle they pull, and a muscle name gives you a joint
-and a direction — so the mapping transfers to any robot. Point it at your URDF:
+## Install
 
 ```bash
-ntx emit legs_all -o out/ --target ros2 --urdf my_robot.urdf
-# ros2 package: out/neuraltransistor_controller (12/12 joints driven @ 200.0Hz)
+git clone <repo> && cd neural-transistor
+python -m venv .venv && .venv/bin/pip install -e .
+ntx doctor          # checks interpreter, deps, compiler, data, index
 ```
 
-Each joint is driven by its own opposing pair, published as standard `JointState`.
-Six worked builds ship in `neuraltransistor.recipe` — hexapod, quadruped, biped,
-micro-UAV, heading-hold, valence-gate — with measured size, fidelity and board fit.
+## Quick start
 
-<img src="docs/img/recipes.png" width="100%" alt="recipes">
+```bash
+ntx quickstart      # fetch data, build index, extract, compress, emit C
+```
 
-## API
+The index build costs ~75 s once and is cached; extraction after that is 0.02–0.32 s per
+circuit against ~140 s for a naive scan of the edge table.
+
+## Circuits
+
+`ntx list`, or `nt.circuits()`. Sizes are measured after pruning at the stated `P(real)`
+and quantizing to int8.
+
+| name | does | flash | RAM | target | boots on |
+|---|---|--:|--:|---|---|
+| `valence` | learned good/bad, multiplies downstream gain | 51.2 KB | 4.6 KB | nRF52840 | Cortex-M3 |
+| `commands` | the whole brain→body bus, 1,314 lines | 79.8 KB | 14.1 KB | STM32F405 | Cortex-M3 |
+| `compass` | heading estimate, no GPS or magnetometer | 111.4 KB | 4.9 KB | STM32F401 | Cortex-M3 |
+| `leg3` | one leg, rear segment | 289.9 KB | 34.9 KB | STM32H743 | Cortex-M7 |
+| `collision` | fires before impact, scales with approach speed | 763.2 KB | 80.1 KB | STM32F405 | Cortex-M3 |
+| `legs` | six legs, phase-locked | 1190.3 KB | 126.7 KB | ESP32-S3 | Cortex-M3 |
+
+Those figures come from `arm-none-eabi-size` on a linked ELF, not from arithmetic, and
+every row boots: see [Cross-compiling and booting](#cross-compiling-and-booting).
+
+Also `eye`, `motion`, `flow`, `odometry`, `steering`, `gate`, `leg1`, `leg2`. The
+anatomical names used before v0.1 (`legs_all`, `gate_readout`, `optic_motion`,
+`looming`, `descending`, `leg_T1..3`, `path_integration`, `optic_flow`) still resolve.
+
+## Python API
 
 ```python
 import neuraltransistor as nt
 
-conn = nt.load()                          # the connectome, cached
-ir   = nt.circuit(conn, "looming")        # 7,459 neurons
-
-ir, stats = nt.prune(ir, p_real=0.95)     # drop connections that aren't real
-ir, rep   = nt.quantize(ir, bits=8)       # int8 + delta-encoded index
-nt.emit_c(ir, "out/")                     # freestanding C99, no malloc, no libc
+conn    = nt.load()                       # connectome, from cache
+ir      = nt.circuit(conn, "compass")     # 452 neurons, 54,290 edges
+ir, st  = nt.prune(ir, p_real=0.95)       # drop edges unlikely to be real
+ir, rep = nt.quantize(ir, bits=8)         # log codebook + delta index
+nt.emit(ir, "out/")                       # -> out/compass.{h,c}, compass_runtime.c
 ```
 
-Runs on GPU and is differentiable, so the dynamics can be trained:
+| call | returns |
+|---|---|
+| `load(rebuild=False)` | `Connectome` — cached CSR index |
+| `circuits()` | `{name: description}` for the library |
+| `circuit(conn, which, **kw)` | `CircuitIR`; `which` is a library name or a `Sel` |
+| `prune(ir, p_real=0.95)` | `(CircuitIR, stats)` |
+| `quantize(ir, bits=8)` | `(CircuitIR, QuantReport)` — carries drive error, correlation, sign agreement |
+| `budget(ir, kb, max_drive_err=0.10)` | `CircuitIR` or `None` if it does not fit |
+| `emit(ir, outdir, target="c")` | `EmitReport`; `target="ros2"` also takes `morph=` |
+| `morphology(name=None, urdf=None)` | `MorphologySpec`, built in or parsed from URDF |
+| `retarget(conn, morph, gait=None)` | binds robot limbs to leg circuits |
+| `sensor(n=886)` | hexagonal ommatidial lattice matching the fly eye |
+| `evaluate(conn)` | runs the eval suite |
+| `fit(ir, task, **kw)` | fits dynamics; see `neuraltransistor.train` |
+
+Select your own circuit instead of using the library:
 
 ```python
-from neuraltransistor.train import RingAttractorTask, fit
-fit(ir, task, steps=300)                  # 136 free parameters, not 54,290
+ir = nt.circuit(conn, nt.Sel.type(r"^MBON") | nt.Sel.type(r"^PAM"), name="mb")
 ```
 
-## Two things worth knowing
+## Emitted C
 
-**How much of a connectome is real?** The field keeps connections above an arbitrary
-synapse count. We measured it instead: the left and right halves of the animal are
-independent reconstructions of the same circuit, so agreement between them says whether
-a connection is real — no ground truth needed. **One in five single-synapse connections
-is noise, and they're 40% of the graph.** `--p-real 0.95` now means something.
+```c
+#include "compass.h"
 
-<img src="docs/img/noise-curve.png" width="100%" alt="noise model">
+compass_state_t s;
+compass_reset(&s);
+for (;;) {
+    compass_tick(&s, input);   /* input: Q8.8 per neuron, or NULL */
+    /* s.fired[i] is neuron i's spike from this tick */
+}
+```
 
-**Compression is about addresses, not weights.** Two thirds of the bytes in a sparse
-layer are indices. Dropping a connection removes its address too, so pruning is worth
-~3× what dropping precision is. And the metric that matters isn't magnitude error, it's
-whether signs survive — `compass` keeps 99.6% sign agreement where `looming` keeps 70.7%.
+`compass_state_t` is the only RAM the circuit needs; every weight, index and parameter is
+`const` and links into flash. The tick loop is event-driven — only neurons that fired last
+tick walk their row — and Dale's law makes the sign constant across a row, so the ±1
+leaves the inner loop entirely.
 
-## Docs
+Two properties are enforced by the eval suite on every circuit:
+
+- **Bit-exactness.** 64/64 ticks identical to the numpy reference.
+- **Sign preservation.** Quantization is reported as drive error, correlation *and* sign
+  agreement, because magnitude error alone hides the failure that matters.
+
+## Cross-compiling and booting
+
+```bash
+ntx firmware compass --device STM32F401 --p-real 0.95 -o out/fw
+```
+
+writes startup code, a linker script, a `main`, a Makefile and a `cilicon.yml` around the
+emitted kernel, cross-builds it with `arm-none-eabi-gcc`, and reports the sizes the
+linker produced. Then:
+
+```bash
+make -C out/fw run          # qemu-system-arm, semihosting console
+# neuraltransistor compass
+# DIGEST 57844e083ae8c0eb
+```
+
+**The boot check verifies what it computed, not that it ran.** `main` runs the circuit
+for 64 ticks against a fixed input and folds every spike into an FNV-1a digest. The
+expected digest is computed from the numpy reference at emit time and written into
+`cilicon.yml` as the string the console has to print, so a green check means the int8
+kernel is bit-exact on cross-compiled ARM. All six circuits above match.
+
+`firmware/valence/` is a generated project checked in so CI can build and boot it without
+the 1.1 GB dataset; `.github/workflows/ci.yml` does exactly that on every PR.
+
+The ELF is linked against the **emulator's** memory map, because that is what has to
+boot. It is not a flashable image for the part named by `--device` — that part's flash
+and SRAM are used as the size gate (`flash_max` / `ram_max`), not as the link map. Boot
+proves the code runs and is correct; the gate proves it fits.
+
+## Targets
+
+`nt.DEVICES` carries ten MCUs with datasheet-sourced SRAM, flash and active power, plus
+an `int8_contract` field. CMSIS-NN is bit-exact with the TFLite Micro reference kernels,
+and ST Edge AI, Ambiq neuralSPOT and ExecuTorch's Cortex-M backend all speak it, so one
+emitter covers them. ESP32-S3 does not: per-tensor symmetric power-of-two only.
+
+Availability is tracked, because two obvious targets are gone: GreenWaves entered
+liquidation in January 2025, taking GAP9 with it, and every `lava-nc` repository was
+archived in May 2026. Both are flagged in the table rather than silently listed.
+
+## Limitations
+
+Read this before trusting a number.
+
+- **Nothing has run on silicon.** Cross-compilation, linking and boot are real, and the
+  sizes above are the linker's. But the boot happens in QEMU, which models the ISA and
+  not the part: no real flash timing, no peripherals, no clock tree. The gap from "boots
+  on an emulated Cortex-M3" to "runs on an STM32F401" is smaller than it was and is not
+  zero.
+- **No power figure here is measured.** `neuraltransistor.target.firmware.energy_estimate`
+  multiplies datasheet active current by an arithmetic duty cycle and labels every field
+  it returns as derived. An emulator cannot measure energy. A real number needs a shunt on
+  a real board — `ina219` / `ina226` — and until one is in the loop this repo has no
+  business quoting milliwatts.
+- **The dynamics are defaults, not results.** The connectome fixes who connects to whom
+  and with what sign. It does not contain time constants, thresholds or gains.
+  `neuraltransistor.train` fits them, and `ntx fit compass` runs it; what that has and
+  has not achieved is in [STATUS.md](docs/STATUS.md). Short version: the ring-attractor
+  kernel is demonstrably present in the wiring, and the fit does not yet make the compass
+  hold a heading at a firing rate the hardware can produce.
+- **`collision` works; `compass` does not yet.** The compiled collision detector fires
+  56 ms before impact with onset scaling at r = −0.9999 and a constant 19.9 ± 2.7° angular
+  threshold across an 8× speed range, from unfitted wiring. The compass forms a correct
+  bearing and loses it the moment input stops. The difference is structural: collision
+  detection is feed-forward, heading needs a self-sustaining loop.
+- **The ROS 2 path is Python and has never run.** It executes the numpy reference, not the
+  emitted C, and `rclpy` is not a dependency of this repo.
+- **Actuator output is a placeholder.** `rate(agonist) − rate(antagonist)`, with no force
+  model, no calcium filter and no torque calibration.
+
+## Documentation
 
 | | |
 |---|---|
-| [FINDINGS.md](docs/FINDINGS.md) | what we measured, with the numbers |
+| [STATUS.md](docs/STATUS.md) | verified / code-exists / not built, with the numbers |
+| [FINDINGS.md](docs/FINDINGS.md) | what was measured, and the figures |
 | [TARGETS.md](docs/TARGETS.md) | every chip, real power figures, what has actually flown |
-| [WHERE-THIS-FITS.md](docs/WHERE-THIS-FITS.md) | what was already published vs what this adds |
-| [STATUS.md](docs/STATUS.md) | verified / code-exists / not built |
-| [BIOLOGY.md](docs/BIOLOGY.md) | the neuroscience, kept out of the way |
 | [DYNAMICS.md](docs/DYNAMICS.md) | what the wiring does *not* contain |
 | [SENSORS.md](docs/SENSORS.md) | cameras, and the eye they have to imitate |
+| [BIOLOGY.md](docs/BIOLOGY.md) | the neuroscience behind the circuit names |
+| [WHERE-THIS-FITS.md](docs/WHERE-THIS-FITS.md) | what was already published vs what this adds |
 
-## Honest status
+## Data
 
-`pytest` 15/15 · `ntx eval` 20/20 · emitted C is **bit-identical to the reference for
-64/64 ticks** on every circuit up to 34,038 neurons.
-
-**Not done:** nothing has been flashed to a real board — every size fit is datasheet
-arithmetic and no power number here is measured. Dynamics fitting is built but has not
-yet made the compass hold a heading. The ROS 2 package has never run against a live ROS
-install.
+male-CNS v1.0 at minconf 0.5: 211,577 annotated bodies, 151,856,684 raw edges. The index
+retains 26,028,386 edges (17.1%) over annotated bodies, which is 125,365,933 synapses
+(40.2%) — what is dropped is almost entirely single-synapse fragments on unannotated
+bodies, and the exact counts are recorded in the index metadata rather than discarded
+quietly.

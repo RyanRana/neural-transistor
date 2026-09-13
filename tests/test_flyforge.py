@@ -114,7 +114,7 @@ def test_emitted_c_is_warning_clean(compass):
 
 
 def test_motor_decode_covers_all_six_legs(conn):
-    ir = from_library(conn, "legs_all")
+    ir = from_library(conn, "legs")
     d = M.decode_motor(ir, conn.neurons)
     assert {x.leg for x in d} >= {"front", "middle", "hind"}
     assert {x.joint for x in d} >= {"coxa_yaw", "trochanter", "knee"}
@@ -123,7 +123,7 @@ def test_motor_decode_covers_all_six_legs(conn):
 
 
 def test_retarget_reports_what_it_drops(conn):
-    ir = from_library(conn, "legs_all")
+    ir = from_library(conn, "legs")
     d = M.decode_motor(ir, conn.neurons)
     rt = R.retarget(M.biped(), d)
     assert len(rt.bindings) == 2

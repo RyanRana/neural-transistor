@@ -37,15 +37,24 @@ class FitResult:
                 for k in self.history[0].keys()} if self.history else {}
 
 
-def fit(ir, task, steps: int = 300, lr: float = 0.05, device: Optional[str] = None,
-        group_pairs_by: str = "sign", clip: float = 1.0, log_every: int = 25,
-        verbose: bool = True, seed: int = 0, write_back: bool = True) -> FitResult:
+def fit(ir, task, steps: int = 300, lr: float = 0.02, device: Optional[str] = None,
+        group_pairs_by: str = "pre_type", clip: float = 1.0, log_every: int = 25,
+        verbose: bool = True, seed: int = 0, write_back: bool = True,
+        curriculum: Optional[tuple] = None) -> FitResult:
     """Fit per-cell-type dynamics so ``ir`` satisfies ``task``.
 
     Structure is never touched -- synapse counts and signs stay exactly as measured, and
     only the biophysics moves. That is the whole point: a fit that could change who
     connects to whom would not be a connectome-constrained model, it would be an RNN
     with an unusually good initialisation.
+
+    ``curriculum`` is a tuple of ``hold_ticks`` values trained in order, and for the ring
+    attractor it is what makes the difference between a fit and a failure. Asked to hold
+    a bump for 180 ticks from a cold start, the optimiser cannot get there gradually: the
+    only gradient it can follow is "more activity everywhere", which wakes the hold phase
+    up and smears the bump out in the same motion (measured: R_driven 0.610 -> 0.198,
+    R_held still 0.000). Holding for 20 ticks is nearly free, and each stage starts from
+    a solution that already works, so the search never has to trade shape for survival.
     """
     if not _HAVE_TORCH:
         raise ImportError("torch is not installed: uv pip install torch")
@@ -54,17 +63,32 @@ def fit(ir, task, steps: int = 300, lr: float = 0.05, device: Optional[str] = No
     torch.manual_seed(seed)
     tc = TorchCircuit(ir, device=device, group_pairs_by=group_pairs_by,
                       dt=ir.dynamics.dt if ir.dynamics else 5e-4)
-    drive = task.build_drive(tc.n, tc.device_, tc.dtype)
+    stages = tuple(curriculum) if curriculum else (getattr(task, "hold_ticks", None),)
     opt = torch.optim.Adam(tc.parameters(), lr=lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps)
 
     if verbose:
         print(tc.summary())
-        print(f"  task {type(task).__name__}: drive {tuple(drive.shape)}")
+        if len(stages) > 1:
+            print(f"  task {type(task).__name__}: curriculum hold_ticks {stages}")
 
     hist, best, best_m, best_state = [], float("inf"), {}, None
+    per_stage = max(steps // len(stages), 1)
+    drive, stage_i = None, -1
     t0 = time.time()
     for step in range(steps):
+        si = min(step // per_stage, len(stages) - 1)
+        if si != stage_i:
+            stage_i = si
+            if stages[si] is not None:
+                task.hold_ticks = stages[si]
+            drive = task.build_drive(tc.n, tc.device_, tc.dtype)
+            # Each stage is a different problem, so a score from an easier one must not
+            # be allowed to win the best-checkpoint comparison against a harder one.
+            best, best_m, best_state = float("inf"), {}, None
+            if verbose:
+                print(f"  -- stage {si + 1}/{len(stages)}: "
+                      f"hold {task.hold_ticks} ticks, drive {tuple(drive.shape)}")
         opt.zero_grad(set_to_none=True)
         spikes, _ = tc(drive)
         loss, metrics = task.loss(spikes, tc)

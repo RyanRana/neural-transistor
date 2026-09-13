@@ -45,8 +45,8 @@ costs, measured against our own circuit sizes:
 | circuit | density | cost of densifying |
 |---|--:|--:|
 | `compass` | 26.6% | **1.06×** |
-| `leg_T1` | — | 13× |
-| `optic_motion` | — | **502×** |
+| `leg1` | — | 13× |
+| `motion` | — | **502×** |
 
 So `compass` runs on stock dense CMSIS-NN kernels with zero new kernel work, and
 everything else needs hand-written sparse kernels that bypass the vendor stack entirely

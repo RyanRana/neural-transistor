@@ -20,15 +20,15 @@ live in the nerve cord, so anything about walking needs this dataset.
 | toolkit name | anatomy |
 |---|---|
 | `compass` | Central complex heading system. EPG neurons tile a ring in the ellipsoid body and carry a single activity bump encoding heading; PEN neurons rotate the bump in proportion to angular velocity; Delta7 provides the inhibition that keeps it to one bump; ER (ring) neurons gate visual input in. |
-| `path_integration` | The above, plus PFN neurons carrying optic-flow and wind vectors, hΔ/vΔ columnar cells accumulating them, FC2 holding a goal direction, and PFL neurons reading out a turn. |
+| `odometry` | The above, plus PFN neurons carrying optic-flow and wind vectors, hΔ/vΔ columnar cells accumulating them, FC2 holding a goal direction, and PFL neurons reading out a turn. |
 | `steering` | FC2 → PFL3 → descending. The goal-to-turn readout on its own. |
-| `optic_motion` | The elementary motion detector: lamina monopolar cells L1–L5, medulla transmedullary cells Mi/Tm, and the T4 (ON) and T5 (OFF) direction-selective cells that correlate neighbouring columns. |
-| `looming` | Lobula columnar feature detectors. LC4 responds to angular velocity, LPLC2 to angular size; both converge on the giant fiber. |
-| `looming_pathway` | The above wired to its input: lamina → medulla → T4/T5 → LC4/LPLC2 → **DNp01**, the giant fiber itself. |
-| `optic_flow` | Lobula plate tangential cells (HS/VS), which act as matched filters for particular self-motion patterns. |
+| `motion` | The elementary motion detector: lamina monopolar cells L1–L5, medulla transmedullary cells Mi/Tm, and the T4 (ON) and T5 (OFF) direction-selective cells that correlate neighbouring columns. |
+| `collision` | Lobula columnar feature detectors. LC4 responds to angular velocity, LPLC2 to angular size; both converge on the giant fiber. |
+| `eye` | The above wired to its input: lamina → medulla → T4/T5 → LC4/LPLC2 → **DNp01**, the giant fiber itself. |
+| `flow` | Lobula plate tangential cells (HS/VS), which act as matched filters for particular self-motion patterns. |
 | `leg_T1/T2/T3` | One thoracic neuromere: premotor interneurons, ~86 leg motor neurons, and the chordotonal/campaniform proprioceptors that feed them back. |
-| `legs_all` | All three neuromeres plus the intersegmental interneurons that couple them. |
-| `descending` | All 1,314 descending neurons — the entire brain-to-nerve-cord channel. |
+| `legs` | All three neuromeres plus the intersegmental interneurons that couple them. |
+| `commands` | All 1,314 descending neurons — the entire brain-to-nerve-cord channel. |
 | `gate` | Mushroom body. Kenyon cells carry a sparse odour/context code; 97 MBONs read out learned valence; PAM/PPL1 dopaminergic neurons set the gain of the KC→MBON synapses; APL (two cells, one per side) provides the global inhibition that keeps the code sparse. |
 
 ## Two naming traps that cost real time here
