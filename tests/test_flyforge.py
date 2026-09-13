@@ -144,3 +144,39 @@ def test_budget_solver_refuses_rather_than_lying(compass):
     out, rep, trials = fit_budget(compass, budget_kb=0.5, max_drive_err=0.01)
     assert out is None and rep is None    # nothing fits 0.5 KB; must not fake it
     assert trials
+
+
+def test_looming_reference_matches_published_bracket():
+    """Our giant-fiber implementation must peak where the published model says.
+
+    Ache 2019 Fig 4B brackets the peak: a pure size detector peaks when the delayed
+    angular size crosses 42 deg (t = -2.6051*tau + 19 ms), a pure velocity detector when
+    expansion peaks at 90 deg (t = -1.0*tau + 19 ms). A real GF sums both and lands
+    between them. Outside that bracket means the implementation is wrong.
+    """
+    from neuraltransistor.stimuli import Looming, giant_fiber
+    for lv in (0.010, 0.020, 0.040, 0.070, 0.100, 0.140):
+        loom = Looming(l_over_v=lv, dt=0.0005)
+        g = giant_fiber(loom)
+        lo, hi = loom.peak_bracket_ms()
+        assert lo <= g["peak_t_ms"] <= hi, (
+            f"r/v={lv*1000:.0f}ms: peak {g['peak_t_ms']:.1f} outside [{lo:.1f},{hi:.1f}]")
+
+
+def test_looming_stimulus_conventions():
+    """Full angle, starts at 10 deg, expansion stops at exactly t = -tau."""
+    import numpy as np
+    from neuraltransistor.stimuli import Looming
+    loom = Looming(l_over_v=0.040, dt=0.0005)
+    assert abs(np.degrees(loom.angular_size[0]) - 10.0) < 0.5
+    # t(90 deg) = -tau exactly
+    assert abs(loom.t_at_size(90.0) - (-0.040)) < 1e-9
+    assert abs(loom.t_at_size(39.0) / 0.040 + 2.8241) < 0.01
+
+
+def test_circuits_have_engineering_roles():
+    """Every circuit says what it DOES, not only what it is called in a fly."""
+    from neuraltransistor.circuit.extract import LIBRARY
+    for key, spec in LIBRARY.items():
+        assert spec.get("role"), f"{key} has no engineering role"
+        assert spec.get("does"), f"{key} has no plain-language description"

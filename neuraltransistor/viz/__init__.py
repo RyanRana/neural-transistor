@@ -11,8 +11,10 @@ white. Every function returns the matplotlib Figure so you can keep editing it, 
     viz.lattice(r).savefig("eye.png")
 """
 
-from neuraltransistor.viz.plot import (PALETTE, bump_sweep, compression, coverage, lattice,
-                               noise_curve, ring, sample, style, trace, waist)
+from neuraltransistor.viz.plot import (PALETTE, bump_sweep, compression, coverage,
+                               lattice, morphology, noise_curve, recipes, ring,
+                               sample, style, trace, waist)
 
 __all__ = ["style", "PALETTE", "lattice", "coverage", "sample", "ring", "trace",
-           "noise_curve", "compression", "waist", "bump_sweep"]
+           "noise_curve", "compression", "waist", "bump_sweep", "morphology",
+           "recipes"]

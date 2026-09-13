@@ -15,8 +15,14 @@ def _conn(args):
 
 def cmd_list(args):
     from neuraltransistor.circuit.extract import LIBRARY
+    print(f"{'circuit':18s} {'does':26s} what you get")
+    print("-" * 100)
     for k, v in LIBRARY.items():
-        print(f"{k:18s} {v['doc']}")
+        print(f"{k:18s} {v.get('role', ''):26s} {v.get('does', v['doc'])}")
+    if args.biology:
+        print("\n--- biological detail ---")
+        for k, v in LIBRARY.items():
+            print(f"\n{k}\n  {v['doc']}")
 
 
 def cmd_index(args):
@@ -354,7 +360,10 @@ def main(argv=None):
     de = sub.add_parser("demo", help="write the figures from live data")
     de.add_argument("-o", "--out", default="docs/img"); de.set_defaults(fn=cmd_demo)
 
-    sub.add_parser("list", help="list the circuit library").set_defaults(fn=cmd_list)
+    li = sub.add_parser("list", help="list the circuit library")
+    li.add_argument("--biology", action="store_true",
+                    help="also print the underlying neuroanatomy")
+    li.set_defaults(fn=cmd_list)
     sub.add_parser("index", help="show connectome index stats").set_defaults(fn=cmd_index)
     sub.add_parser("noise", help="bilateral reproducibility / noise model").set_defaults(fn=cmd_noise)
 

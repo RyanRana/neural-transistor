@@ -322,3 +322,106 @@ def bump_sweep(sweep: dict, figsize=(7.2, 3.7)):
         ax.legend(fontsize=7.5, labelcolor=PALETTE["fg"], loc="center right")
         _clean(ax); fig.tight_layout()
     return fig
+
+
+# --------------------------------------------------------------------------- #
+# form factors
+
+#: Nominal limb positions per morphology, purely for drawing. (x, y) in body frame.
+_LAYOUT = {
+    "hexapod":   {"L1": (-.55, .85), "R1": (.55, .85), "L2": (-.7, 0), "R2": (.7, 0),
+                  "L3": (-.55, -.85), "R3": (.55, -.85)},
+    "quadruped": {"FL": (-.6, .7), "FR": (.6, .7), "HL": (-.6, -.7), "HR": (.6, -.7)},
+    "biped":     {"L": (-.4, 0), "R": (.4, 0)},
+}
+_SEG_COLOR = {"front": PALETTE["accent"], "middle": PALETTE["cool"],
+              "hind": PALETTE["ok"], "wing": PALETTE["violet"]}
+
+
+def morphology(morph, plan=None, ax=None, figsize=(4.6, 4.6), title=None):
+    """Draw a robot's limbs, coloured by which fly leg circuit drives each one.
+
+    Phase is printed on each limb: two limbs sharing a phase step together. For a
+    hexapod tripod that is the classic two alternating triangles, and you can read it
+    straight off the picture.
+    """
+    with style() as plt:
+        fig, ax = _fig(ax, figsize)
+        lay = _LAYOUT.get(morph.name)
+        if lay is None:                      # URDF or modular: ring them
+            n = max(morph.n_limbs, 1)
+            lay = {l.name: (0.8 * np.cos(2 * np.pi * i / n + np.pi / 2),
+                            0.8 * np.sin(2 * np.pi * i / n + np.pi / 2))
+                   for i, l in enumerate(morph.limbs)}
+        bind = {b.limb: b for b in (plan.bindings if plan else [])}
+
+        ax.add_patch(plt.Rectangle((-.28, -.95), .56, 1.9, fc=PALETTE["panel"],
+                                   ec=PALETTE["line"], lw=1.2, zorder=1))
+        for name, (x, y) in lay.items():
+            b = bind.get(name)
+            col = _SEG_COLOR.get(b.source_leg, PALETTE["faint"]) if b else PALETTE["faint"]
+            ax.plot([0, x], [y * .55, y], color=col, lw=2.4, zorder=2,
+                    solid_capstyle="round")
+            ax.scatter([x], [y], s=190, color=col, zorder=3, edgecolors=PALETTE["bg"],
+                       linewidths=1.6)
+            lab = name if b is None else f"{name}\n{b.phase:.2f}"
+            ax.annotate(lab, (x, y), color=PALETTE["fg"], fontsize=7,
+                        ha="center", va="center", zorder=4,
+                        bbox=dict(boxstyle="round,pad=0.18", fc=PALETTE["bg"],
+                                  ec="none", alpha=.82))
+        if plan:
+            seen = []
+            for b in plan.bindings:
+                if b.source_leg not in seen:
+                    seen.append(b.source_leg)
+            for i, seg in enumerate(seen):
+                ax.scatter([], [], s=70, color=_SEG_COLOR.get(seg, PALETTE["faint"]),
+                           label=f"fly {seg} leg")
+            ax.legend(fontsize=6.8, loc="upper center", labelcolor=PALETTE["fg"],
+                      bbox_to_anchor=(0.5, -0.02), ncol=len(seen), handletextpad=.3,
+                      columnspacing=1.1)
+        ax.set_xlim(-1.15, 1.15); ax.set_ylim(-1.3, 1.15)
+        ax.set_aspect("equal"); ax.axis("off")
+        t = title or f"{morph.name} \u00b7 {morph.n_joints} joints @ {morph.control_hz:g} Hz"
+        if plan:
+            t += f" \u00b7 {plan.gait}"
+        ax.set_title(t, loc="left", pad=8, fontsize=9.5)
+    return fig
+
+
+def recipes(reports: dict, figsize=(9.6, 4.4)):
+    """Every form factor on one chart: what it costs and what it costs you."""
+    with style() as plt:
+        fig, (a, b) = plt.subplots(1, 2, figsize=figsize,
+                                   gridspec_kw={"wspace": .3})
+        names = list(reports)
+        kb = [reports[n].flash_kb for n in names]
+        err = [reports[n].drive_err * 100 for n in names]
+        agree = [reports[n].sign_agreement * 100 for n in names]
+        y = np.arange(len(names))[::-1]
+
+        cols = [PALETTE["ok"] if reports[n].fits_target else PALETTE["bad"] for n in names]
+        a.barh(y, kb, color=cols, height=.6, zorder=3)
+        for yy, k, n in zip(y, kb, names):
+            a.text(k * 1.06, yy, f"{k:,.0f} KB", va="center", fontsize=7.5,
+                   color=PALETTE["fg"])
+        for x, lab in [(512, "512 KB"), (2048, "2 MB")]:
+            a.axvline(x, color=PALETTE["faint"], lw=.8, ls=":")
+            a.text(x, len(names) - .3, lab, fontsize=6.6, color=PALETTE["faint"],
+                   rotation=90, va="top")
+        a.set_yticks(y); a.set_yticklabels(names, fontsize=8)
+        a.set_xscale("log"); a.set_xlim(20, 9000)
+        a.set_xlabel("flash on device (KB)")
+        a.set_title("what each form factor costs", loc="left", pad=8)
+        a.grid(axis="y", visible=False); _clean(a)
+
+        b.scatter(err, agree, s=90, c=cols, zorder=3, edgecolors=PALETTE["bg"], lw=1.4)
+        for e, g, n in zip(err, agree, names):
+            b.annotate(n, (e, g), fontsize=6.8, color=PALETTE["dim"],
+                       xytext=(5, 4), textcoords="offset points")
+        b.axhline(95, color=PALETTE["faint"], lw=.8, ls=":")
+        b.text(0.4, 95.6, "95% sign agreement", fontsize=6.8, color=PALETTE["faint"])
+        b.set_xlabel("drive error (%)"); b.set_ylabel("sign agreement (%)")
+        b.set_title("what it costs you", loc="left", pad=8)
+        _clean(b)
+    return fig

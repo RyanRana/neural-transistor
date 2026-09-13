@@ -1,146 +1,138 @@
 # Neural Transistor
 
-Compile *Drosophila* connectome circuits into quantized controllers that run on
-milliwatt hardware.
+**Control circuits for small robots, compiled from a fly brain. No training data.**
 
-Google and Janelia built the map. The query tools let you look at it. This is the
-toolchain that takes a piece of it, tells you which parts are real, shrinks it until it
-fits in kilobytes, tells you what the shrinking cost, and hands you C you can flash.
-See [what already exists vs what this adds](docs/WHERE-THIS-FITS.md).
-
-<img src="docs/img/ui.png" width="100%" alt="neuraltransistor UI">
+<img src="docs/img/ui.png" width="100%" alt="Neural Transistor">
 
 ---
 
-## Install
+## The problem
+
+Your robot needs to not hit things, or walk, or know which way it's pointing. The usual
+answer is to train a network — which needs a dataset you don't have, a GPU you can't
+carry, and weeks you'd rather not spend.
+
+A fly does all three on about a milliwatt. The complete wiring diagram of its nervous
+system was published and is free. Nobody had turned it into code you can flash.
+
+This does. You get a `.c` file.
 
 ```bash
-git clone <repo> && cd neuraltransistor
-uv venv --python 3.12 && uv pip install -e .
-export NTX_DATA=~/fly-connectome          # the three male-CNS .feather files
-neuraltransistor index                                 # builds the CSR index, ~75 s, once
+ntx quickstart              # downloads the data, builds, emits C. One command.
 ```
 
-No account, no token. The male-CNS release is public:
-`gs://flyem-male-cns/` reads anonymously.
+```
+[6] emitting C into out/
+  C emit: 452 neurons / 27,873 edges | flash 110.5 KB, ram 4.0 KB | w8 i16
+    out/compass.h  out/compass.c  out/compass_runtime.c
+[7] which chips it fits
+  9 of 9: STM32F405, STM32F401, STM32H743, STM32U575, nRF52840, RP2350, ESP32-S3, ...
+```
+
+## What you can build
+
+| circuit | does | flash | RAM | runs on |
+|---|---|--:|--:|---|
+| `looming` | **collision detector** — fires before impact | 762 KB | 66 KB | STM32F405 (the Crazyflie MCU) |
+| `compass` | **heading estimator** — bearing with no GPS | 110 KB | 4 KB | anything, down to a 96 KB F401 |
+| `legs_all` | **gait controller** — 6 legs, phase-locked | 1.2 MB | 104 KB | ESP32-S3 |
+| `leg_T3` | **single-leg controller** | 289 KB | 28 KB | STM32H743 |
+| `gate_readout` | **valence gate** — learned good/bad, multiplies downstream gain | 50 KB | 4 KB | everything |
+| `descending` | **command bus** — all 1,314 brain→body lines | 239 KB | 12 KB | everything |
+
+`ntx list` for the rest. Sizes are measured, at int8 with a stated confidence threshold.
+
+## Does it actually work?
+
+One circuit is proven, one is proven *not* to, and the honesty about which is the point.
+
+**Collision detection works.** Driven by a camera, the compiled circuit fires **56 ms
+before impact**, its onset scales with approach speed at **r = −0.9999**, and it triggers
+at a constant object size (**19.9 ± 2.7°** across an 8× speed range). Linear speed scaling
+plus a fixed size threshold are the two things that define a real collision detector, and
+both fall out of the wiring with zero tuning.
+
+<img src="docs/img/gf-model.png" width="100%" alt="collision response">
+
+**Heading doesn't work yet.** The compass forms a correct bearing estimate while it has
+input and loses it the instant input stops — at *every* gain setting across a 250× sweep.
+Wiring gives you structure, not memory. Fixing it needs the fitting stage
+(`ntx` + `neuraltransistor.train`), which is built and running but has not closed it.
+
+That difference is structural: collision detection is feed-forward, heading needs a
+self-sustaining loop.
+
+## Form factors
+
+<img src="docs/img/form-factors.png" width="100%" alt="form factors">
+
+Motor outputs are labelled by the muscle they pull, and a muscle name gives you a joint
+and a direction — so the mapping transfers to any robot. Point it at your URDF:
+
+```bash
+ntx emit legs_all -o out/ --target ros2 --urdf my_robot.urdf
+# ros2 package: out/neuraltransistor_controller (12/12 joints driven @ 200.0Hz)
+```
+
+Each joint is driven by its own opposing pair, published as standard `JointState`.
+Six worked builds ship in `neuraltransistor.recipe` — hexapod, quadruped, biped,
+micro-UAV, heading-hold, valence-gate — with measured size, fidelity and board fit.
+
+<img src="docs/img/recipes.png" width="100%" alt="recipes">
 
 ## API
 
 ```python
-import neuraltransistor as ff
+import neuraltransistor as nt
 
-conn = ff.load()                          # 211,577 neurons, 26,028,386 edges (cached)
-ir   = ff.circuit(conn, "compass")        # 452 neurons, 54,290 edges, 188 KB
+conn = nt.load()                          # the connectome, cached
+ir   = nt.circuit(conn, "looming")        # 7,459 neurons
 
-ir, stats = ff.prune(ir, p_real=0.95)     # keep edges 95% likely to be real
-ir, rep   = ff.quantize(ir, bits=8)       # log codebook + delta-encoded index
-print(rep)   # 188KB -> 74KB (2.6x) | drive err 0.02% | r=1.0000 | 0 sign flips
-
-ff.emit_c(ir, "out/")                     # freestanding C99, no malloc, no libc
+ir, stats = nt.prune(ir, p_real=0.95)     # drop connections that aren't real
+ir, rep   = nt.quantize(ir, bits=8)       # int8 + delta-encoded index
+nt.emit_c(ir, "out/")                     # freestanding C99, no malloc, no libc
 ```
 
-Cut your own circuit with a selector instead of the library:
+Runs on GPU and is differentiable, so the dynamics can be trained:
 
 ```python
-valence = ff.circuit(conn, ff.Sel.type(r"^MBON") | ff.Sel.type(r"^PAM"), name="valence")
-# valence: 413 neurons, 3,725 edges, 7,408 modulatory
+from neuraltransistor.train import RingAttractorTask, fit
+fit(ir, task, steps=300)                  # 136 free parameters, not 54,290
 ```
-
-Fit a byte budget — it returns `None` rather than hand you an over-budget artifact:
-
-```python
-ir, rep, trials = ff.budget(ir, kb=80)
-# log w4/i8 prune>=2: 247KB -> 66KB (3.8x) | drive err 6.6% | r=0.9986 | sign agree 98.7%
-```
-
-Target a real robot by reading its URDF:
-
-```python
-spec, report = ff.morphology(urdf="my_robot.urdf")   # 4 limbs / 12 joints
-plan = ff.retarget(conn, spec, gait="trot")          # binds fly leg circuits to limbs
-ff.emit_ros2(ir, spec, "out/")                       # ament_python package
-```
-
-Run it in Python to check against the device:
-
-```python
-rt = ff.Reference(ir)                     # integer-exact, matches the emitted C bit for bit
-rt.run(200, drive)
-```
-
-## CLI
-
-```bash
-neuraltransistor list                             # the circuit library
-neuraltransistor noise                            # the reproducibility curve
-neuraltransistor extract compass -o compass.fcx
-neuraltransistor compress compass --p-real 0.95 --budget-kb 120
-neuraltransistor emit compass -o out/ --target mcu
-neuraltransistor emit legs_all -o out/ --target ros2 --urdf my_robot.urdf
-neuraltransistor eval                             # 33 evals
-neuraltransistor ui                               # the page above, on :8765
-```
-
-## The library
-
-| circuit | neurons | edges | int8 flash | fits |
-|---|--:|--:|--:|---|
-| `gate_readout` — MBON valence + dopaminergic gate | 429 | 4,144 | **57 KB** | all 10 |
-| `compass` — EPG/PEN ring attractor | 452 | 54,290 | 188 KB | all 10 |
-| `descending` — the entire brain→body bus | 1,314 | 71,762 | 239 KB | all 10 |
-| `path_integration` — + PFN, FC2, PFL | 1,651 | 125,198 | 381 KB | all 10 |
-| `leg_T1` — one front leg, premotor + MN + proprioceptors | 3,553 | 311,915 | 949 KB | 8 |
-| `legs_all` — six legs and their coordination | 11,790 | 1,569,085 | 4.7 MB | 1 |
-
-Plus `steering`, `optic_motion`, `looming`, `optic_flow`, `leg_T2/T3`, `gate`.
-
-It fits because the fly's own architecture is a stack of narrow waists: 89,403
-optic-lobe neurons compress to 9,201 projection neurons, the whole brain commands the
-whole body through **1,314 descending neurons**, and the animal acts through **708 motor
-neurons**.
-
----
 
 ## Two things worth knowing
 
-**Bilateral symmetry is a free replicate experiment.** The hemispheres were reconstructed
-independently, so cross-hemisphere reproducibility measures whether an edge is real with
-no ground truth. That turns the field's arbitrary "keep ≥5 synapses" convention into a
-stated confidence.
+**How much of a connectome is real?** The field keeps connections above an arbitrary
+synapse count. We measured it instead: the left and right halves of the animal are
+independent reconstructions of the same circuit, so agreement between them says whether
+a connection is real — no ground truth needed. **One in five single-synapse connections
+is noise, and they're 40% of the graph.** `--p-real 0.95` now means something.
 
-<img src="docs/img/noise-curve.png" width="100%" alt="bilateral reproducibility">
+<img src="docs/img/noise-curve.png" width="100%" alt="noise model">
 
-**The compass forms a bump and cannot hold it.** Swept across 250× of global synaptic
-gain, the connectome alone produces a correctly-sized bump under drive and zero
-persistence without it. Connectivity is not dynamics.
-
-<img src="docs/img/bump-sweep.png" width="100%" alt="bump gain sweep">
-
-Both in detail, with the numbers and the code: **[docs/FINDINGS.md](docs/FINDINGS.md)**.
+**Compression is about addresses, not weights.** Two thirds of the bytes in a sparse
+layer are indices. Dropping a connection removes its address too, so pruning is worth
+~3× what dropping precision is. And the metric that matters isn't magnitude error, it's
+whether signs survive — `compass` keeps 99.6% sign agreement where `looming` keeps 70.7%.
 
 ## Docs
 
 | | |
 |---|---|
-| [FINDINGS.md](docs/FINDINGS.md) | the noise model, the motor-neuron sign trap, the bump result |
-| [DYNAMICS.md](docs/DYNAMICS.md) | what the connectome does *not* contain, and who has fitted it |
-| [TARGETS.md](docs/TARGETS.md) | real chips, sourced power numbers, what has actually flown |
-| [SENSORS.md](docs/SENSORS.md) | mapping a camera onto a 886-ommatidium eye |
-| [WHERE-THIS-FITS.md](docs/WHERE-THIS-FITS.md) | what Google/Janelia already published, and what this adds |
-| [STATUS.md](docs/STATUS.md) | verified vs code-exists vs not built |
-| [NOTES.md](NOTES.md) | running log |
+| [FINDINGS.md](docs/FINDINGS.md) | what we measured, with the numbers |
+| [TARGETS.md](docs/TARGETS.md) | every chip, real power figures, what has actually flown |
+| [WHERE-THIS-FITS.md](docs/WHERE-THIS-FITS.md) | what was already published vs what this adds |
+| [STATUS.md](docs/STATUS.md) | verified / code-exists / not built |
+| [BIOLOGY.md](docs/BIOLOGY.md) | the neuroscience, kept out of the way |
+| [DYNAMICS.md](docs/DYNAMICS.md) | what the wiring does *not* contain |
+| [SENSORS.md](docs/SENSORS.md) | cameras, and the eye they have to imitate |
 
-## Honesty
+## Honest status
 
-`pytest tests/` — 15 passing. `neuraltransistor eval` — 33 passing.
+`pytest` 15/15 · `ntx eval` 20/20 · emitted C is **bit-identical to the reference for
+64/64 ticks** on every circuit up to 34,038 neurons.
 
-**Verified:** emitted C is bit-identical to the numpy reference for 64/64 ticks on every
-circuit up to 11,790 neurons · int8 costs 0.02–0.6% drive error at r ≥ 0.999 · the
-motor-neuron sign guard rescues 166 of 708 neurons · extraction is deterministic ·
-compass runs 40,445 tick/s on host.
-
-**Not true yet:** no dynamics are fitted, so no circuit is claimed to *work* — the
-compass bump result above is the measurement of that gap, not a workaround for it.
-Nothing has been flashed to hardware; every device fit is datasheet arithmetic and no
-power number here is measured. Sensor and actuator adapters are the thinnest layer in
-the repo. Full ledger in [STATUS.md](docs/STATUS.md).
+**Not done:** nothing has been flashed to a real board — every size fit is datasheet
+arithmetic and no power number here is measured. Dynamics fitting is built but has not
+yet made the compass hold a heading. The ROS 2 package has never run against a live ROS
+install.

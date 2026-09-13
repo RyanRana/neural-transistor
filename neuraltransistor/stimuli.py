@@ -40,22 +40,60 @@ class Looming:
     which peaks just before contact -- that peak, and its timing, is what looming
     detectors key on.
     """
-    l_over_v: float = 0.040          # seconds
+    l_over_v: float = 0.040          # seconds (the "r/v" ratio; papers quote it in ms)
     dt: float = 0.001                # s per tick
-    t_start: float = -1.0            # s before collision
-    t_end: float = -0.005            # stop just short of contact (theta -> 90 deg)
-    max_half_angle_deg: float = 85.0
+    t_start: float | None = None     # default: the moment it reaches start_size_deg
+    start_size_deg: float = 10.0     # FULL angle at stimulus onset
+    end_size_deg: float = 90.0       # FULL angle where expansion stops
+    hold_s: float = 0.12             # hold at end_size after expansion stops
+    hold_ticks: int | None = None    # overrides hold_s if given
 
     def __post_init__(self):
-        self.t = np.arange(self.t_start, self.t_end, self.dt)
         tau = self.l_over_v
-        # theta = arctan(l / (v|t|)) = arctan( (l/v) / |t| )
-        self.theta = np.arctan(tau / np.abs(self.t))
-        cap = np.radians(self.max_half_angle_deg)
-        self.theta = np.minimum(self.theta, cap)
-        # dtheta/dt = (l/v) / (t^2 + (l/v)^2)
-        self.theta_dot = tau / (self.t ** 2 + tau ** 2)
-        self.theta_dot[self.theta >= cap] = 0.0
+        # Card-lab convention (von Reyn 2017, Ache 2019): theta is the FULL subtended
+        # angle, t < 0 during expansion, and t = 0 is the *theoretical* time of contact,
+        # defined as the moment the object would subtend 180 deg -- not the moment it
+        # reaches the eye. Inverting theta = 2*arctan(tau/|t|):
+        #     t(theta) = -tau / tan(theta/2)
+        t_lo = -tau / np.tan(np.radians(self.start_size_deg) / 2)
+        t_hi = -tau / np.tan(np.radians(self.end_size_deg) / 2)   # = -tau at 90 deg
+        if self.t_start is not None:
+            t_lo = min(self.t_start, t_hi - self.dt)
+        self.t = np.arange(t_lo, t_hi, self.dt)
+        self.theta = np.arctan(tau / np.abs(self.t))              # HALF angle
+        self.theta_dot = tau / (self.t ** 2 + tau ** 2)           # d(half)/dt
+        if self.hold_ticks is None:
+            # Real experiments stop the expansion at 90 deg and HOLD it there. Without a
+            # hold, a fast loom (small r/v) ends before the response can peak, because
+            # expansion stops at exactly t = -tau while the giant fiber peaks later. The
+            # truncation looks like a modelling error and is really a stimulus error.
+            self.hold_ticks = int(round(self.hold_s / self.dt))
+        if self.hold_ticks:
+            # real experiments stop the expansion at 90 deg and hold it there; the
+            # 180 deg endpoint is never displayed
+            self.t = np.concatenate([self.t, self.t[-1] + self.dt * np.arange(
+                1, self.hold_ticks + 1)])
+            self.theta = np.concatenate([self.theta,
+                                         np.full(self.hold_ticks, self.theta[-1])])
+            self.theta_dot = np.concatenate([self.theta_dot,
+                                             np.zeros(self.hold_ticks)])
+
+    # --- closed forms worth having ------------------------------------------
+    def t_at_size(self, full_angle_deg: float) -> float:
+        """Exact time (s, negative) at which the object subtends this FULL angle."""
+        return -self.l_over_v / np.tan(np.radians(full_angle_deg) / 2)
+
+    def peak_bracket_ms(self, delay_ms: float = 19.0) -> tuple:
+        """Where a real giant fiber's peak must fall, from Ache 2019 Fig 4B.
+
+        A pure angular-SIZE detector peaks when the delayed size crosses 42 deg
+        (t = -2.6051*tau + delay); a pure angular-VELOCITY detector peaks when expansion
+        peaks, at 90 deg (t = -1.0*tau + delay). A real GF sits between the two, because
+        it sums an LC4 velocity term and an LPLC2 size term. Any implementation whose
+        peak falls outside this bracket is wrong.
+        """
+        tau_ms = self.l_over_v * 1000.0
+        return (-2.6051 * tau_ms + delay_ms, -1.0 * tau_ms + delay_ms)
 
     @property
     def angular_size(self) -> np.ndarray:
@@ -67,7 +105,7 @@ class Looming:
         return self.t * 1000.0
 
     def time_at_size(self, full_angle_deg: float) -> float:
-        """When (s before collision) the object first subtends this full angle."""
+        """When (s before contact) the object first subtends this full angle."""
         target = np.radians(full_angle_deg)
         hit = np.flatnonzero(self.angular_size >= target)
         return float(self.t[hit[0]]) if len(hit) else float("nan")
@@ -116,7 +154,7 @@ GF_PARAMS = dict(
     lplc2_peak_mv=1.7, lplc2_mu_deg=42.0, lplc2_sigma_log=0.52, lplc2_delay_ms=19.0,
     i1_offset=-0.53, i1_amp=0.59, i1_mid_deg=66.0, i1_slope=-11.0, i1_delay_ms=37.5,
     i2_amp=-0.52, i2_mu_deg=26.0, i2_sigma_deg=7.8, i2_delay_ms=11.0,
-    threshold_size_deg=40.0,
+    threshold_size_deg=39.0,   # behavioural GF size threshold (Ache 2019)
 )
 
 

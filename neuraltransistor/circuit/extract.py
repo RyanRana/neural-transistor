@@ -225,42 +225,56 @@ def _attach_ports(ir: CircuitIR, sub) -> None:
 
 LIBRARY = {
     "compass": dict(
+        role="heading estimator",
+        does="Gyro in, heading out. Holds a bearing with no GPS and no magnetometer.",
         sel=Sel.type(r"^(EPG|PEN|PEG|Delta7|ER|EL)"),
         doc="Central-complex heading system: EPG bump, PEN angular-velocity "
             "integration, Delta7 global inhibition, ER visual gating.",
         closure="none",
     ),
     "path_integration": dict(
+        role="dead reckoning",
+        does="Tracks where you are relative to where you started, from self-motion alone.",
         sel=Sel.type(r"^(EPG|PEN|PEG|Delta7|ER|PFN|hDelta|vDelta|FC2|PFL)"),
         doc="Compass plus the vector memory and steering readout: PFN optic-flow "
             "input, hDelta/vDelta accumulation, FC2 goal, PFL steering.",
         closure="none",
     ),
     "steering": dict(
+        role="goal steering",
+        does="Given a heading and a goal bearing, produce a turn command.",
         sel=Sel.type(r"^(FC2|PFL|hDelta)"),
         doc="The goal-to-turn readout alone. The narrowest useful waist in the "
             "navigation stack.",
         closure="efferent",
     ),
     "optic_motion": dict(
+        role="optical flow",
+        does="Per-pixel motion direction from a camera. No training data.",
         sel=Sel.type(r"^(T4|T5|Mi1|Mi4|Mi9|Tm1|Tm2|Tm3|Tm4|Tm9|Tm20|C2|C3|L[1-5])"),
         doc="Elementary motion detection: the T4/T5 correlator and its columnar "
             "input pathway.",
         closure="none",
     ),
     "looming": dict(
+        role="collision detector",
+        does="Fires before you hit something. Scales correctly with approach speed.",
         sel=Sel.type(r"^(LPLC|LC[0-9]|LPi|GF)"),
         doc="Collision avoidance: lobula columnar feature detectors including the "
             "LPLC2 looming pathway.",
         closure="efferent",
     ),
     "optic_flow": dict(
+        role="self-motion estimator",
+        does="Wide-field flow to ego-motion: are you translating or rotating.",
         sel=Sel.type(r"^(HS|VS|H[12]|CH|LPi|LPT)"),
         doc="Wide-field optic-flow integration: the lobula plate tangential cells "
             "that act as matched filters for self-motion.",
         closure="afferent",
     ),
     "leg_T1": dict(
+        role="single-leg controller",
+        does="One leg: swing, stance, load and position reflexes.",
         sel=Sel.neuromere("T1") & (Sel.superclass("vnc_intrinsic") | Sel.motor()
                                    | Sel.superclass("vnc_sensory")),
         doc="One front-leg local circuit: premotor interneurons, motor neurons and "
@@ -268,18 +282,24 @@ LIBRARY = {
         closure="none",
     ),
     "leg_T2": dict(
+        role="single-leg controller",
+        does="One leg, middle-segment variant.",
         sel=Sel.neuromere("T2") & (Sel.superclass("vnc_intrinsic") | Sel.motor()
                                    | Sel.superclass("vnc_sensory")),
         doc="One middle-leg local circuit.",
         closure="none",
     ),
     "leg_T3": dict(
+        role="single-leg controller",
+        does="One leg, rear-segment variant. The propulsive one.",
         sel=Sel.neuromere("T3") & (Sel.superclass("vnc_intrinsic") | Sel.motor()
                                    | Sel.superclass("vnc_sensory")),
         doc="One hind-leg local circuit.",
         closure="none",
     ),
     "legs_all": dict(
+        role="gait controller",
+        does="Six legs and the coupling that keeps them in phase.",
         sel=Sel.neuromere("T1", "T2", "T3") & (Sel.superclass("vnc_intrinsic")
                                                | Sel.motor() | Sel.superclass("vnc_sensory")),
         doc="All six legs plus the intersegmental interneurons that coordinate them. "
@@ -287,12 +307,16 @@ LIBRARY = {
         closure="none",
     ),
     "descending": dict(
+        role="command bus",
+        does="The entire brain-to-body channel: 1,314 command lines.",
         sel=Sel.descending(),
         doc="The entire brain-to-body command bus: 1,314 neurons. Every behavioural "
             "command the brain issues passes through here.",
         closure="none",
     ),
     "looming_pathway": dict(
+        role="camera-to-brake pipeline",
+        does="Raw camera frames to an escape command, end to end. The only circuit you can drive straight from a sensor.",
         sel=Sel.type(r"^(L[1-5]$|Tm1$|Tm2$|Tm4$|Tm9$|Tm20$|Tm5Y$|T5[a-d]$|T4[a-d]$"
                      r"|LPLC[0-9]|LC4$|LPi|Y3$|DNp0[1-3]$)"),
         doc="The full OFF collision pathway, retina to escape command: lamina monopolar "
@@ -305,6 +329,8 @@ LIBRARY = {
         closure="none",
     ),
     "gate": dict(
+        role="threat/valence gate",
+        does="Learned good/bad signal that multiplies the gain of everything downstream.",
         sel=Sel.type(r"^(KC|MBON|PAM|PPL|PPM|APL|DPM)"),
         doc="Mushroom body: sparse Kenyon-cell context code, 97 MBON valence "
             "readouts, and the dopaminergic neurons that gate them. The fly's "
@@ -312,6 +338,8 @@ LIBRARY = {
         closure="none",
     ),
     "gate_readout": dict(
+        role="valence readout",
+        does="The gate without the memory. Kilobyte-scale attention.",
         sel=Sel.type(r"^(MBON|PAM|PPL1)"),
         doc="The gate without the Kenyon cells: valence readout plus dopaminergic "
             "modulation only. Kilobyte-scale.",
@@ -325,8 +353,12 @@ def from_library(conn: Connectome, key: str, **overrides) -> CircuitIR:
         raise KeyError(f"unknown circuit {key!r}; have {sorted(LIBRARY)}")
     spec = dict(LIBRARY[key])
     doc = spec.pop("doc")
+    role = spec.pop("role", "")
+    does = spec.pop("does", "")
     sel = spec.pop("sel")
     spec.update(overrides)
     ir = extract(conn, sel, name=key, **spec)
     ir.provenance["doc"] = doc
+    ir.provenance["role"] = role
+    ir.provenance["does"] = does
     return ir
