@@ -19,7 +19,7 @@ Last updated 2026-09-13.
 | F8 | ROS 2 package emitter | code exists |
 | F9 | Hex-lattice retina resampler | code exists |
 | F10 | Local UI | **verified** |
-| F11 | Eval suite | **verified** (21/21) |
+| F11 | Eval suite | **verified** (31/31 over 4 circuits) |
 | F12 | Dynamics fitting against behaviour | **not built** |
 | F13 | Functional validation (does the compass hold a bump) | **not built** |
 | F14 | SNN backend (Loihi / Speck) | **not built** |
@@ -53,6 +53,16 @@ compass and descending. Clean under `-Wall -Wextra -Werror`. Throughput on host:
 **Morphology (F7).** 34 motor decodes from `legs_all`: 3 leg pairs × 5 joints + 4 wing
 channels. 100% joint coverage on hexapod, quadruped and biped at 3 DOF. URDF import
 reads 12 actuated joints / 4 limbs from the example quadruped.
+
+**Gating (F3/F6).** Silencing the dopaminergic pathway moves the circuit, so the
+multiplicative compilation is load-bearing rather than decorative: `gate` 3,524 neurons
+/ 27.3% mean rate change, `gate_readout` 209 / 11.1%, `compass` 229 / 16.3%,
+`descending` 323 / 4.7%, `legs_all` 1,011 / 1.0%.
+
+**Scale (F6).** `legs_all` — 11,790 neurons, 1,569,085 edges — is bit-identical to the
+reference for 64/64 ticks and runs 3,076 tick/s (325 µs/tick) on host. int8 costs 0.611%
+drive error and 2 sign flips out of 11,790 neurons. It fits 1 of 8 reference devices
+(ESP32-S3, on flash).
 
 **Retina (F9).** A 70° camera covers 22.8% of the fly's visual field; 120° covers 48.5%.
 This is computed, not measured on a sensor.

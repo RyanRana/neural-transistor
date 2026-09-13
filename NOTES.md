@@ -18,3 +18,6 @@ running log of things that turned out to be true. one line each.
 - restricting to annotated bodies drops 83% of edges but keeps 40% of synapses, what you lose is almost entirely single synapse fragments
 - dopaminergic edges have to be multiplicative not additive, compile them as ordinary synapses and the gating behaviour just quietly disappears
 - one front leg is 3553 neurons and fits in 949kb before any pruning, the compass is 452 neurons and 188kb
+- best way to prove the gating actually compiles is to silence it and see if anything moves, 3524 neurons shift in the mushroom body so it is real
+- emitted c matches the numpy reference bit for bit for 64 ticks which is the only reason i trust any of the size numbers
+- a 70 degree camera only sees 22.8% of what a fly sees, you need like 120 degrees minimum before the optic circuits make sense

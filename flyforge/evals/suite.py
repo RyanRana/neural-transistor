@@ -301,6 +301,47 @@ def eval_noise_monotonic(conn: Connectome) -> EvalResult:
                            f"P(real|w=1)={float(m.p_real(np.array([1]))[0]):.3f}")
 
 
+def eval_gating_changes_behaviour(ir: CircuitIR, ticks: int = 120) -> EvalResult:
+    """The modulatory pathway must actually gate, not merely be present.
+
+    Compiling dopaminergic edges as ordinary additive synapses leaves a graph that looks
+    correct and has no gating in it. The only way to know which you built is to run the
+    circuit twice -- once with the modulatory edges live, once with them silenced -- and
+    check that the firing pattern moved. If it did not, the gate is decoration.
+    """
+    import copy
+    if ir.n_mod_edges == 0:
+        return EvalResult("gating", False, note="circuit has no modulatory edges")
+
+    drive = np.array([((i * 37) % 400) - 100 for i in range(ir.n_neurons)],
+                     dtype=np.int64)
+
+    on = Reference(ir)
+    _, rates_on = on.run(ticks, drive)
+
+    muted = copy.copy(ir)
+    muted.mod_weight = np.zeros_like(ir.mod_weight)
+    off = Reference(muted)
+    _, rates_off = off.run(ticks, drive)
+
+    delta = float(np.abs(rates_on - rates_off).mean())
+    moved = int((np.abs(rates_on - rates_off) > 1e-9).sum())
+    denom = max(float(rates_off.mean()), 1e-9)
+    rel = delta / denom
+    ok = moved > 0 and delta > 0
+    return EvalResult(
+        "gating", ok,
+        detail={"mod_edges": ir.n_mod_edges, "ticks": ticks,
+                "neurons_changed": moved,
+                "mean_rate_delta": round(delta, 6),
+                "relative_shift": round(rel, 4),
+                "mean_rate_gated": round(float(rates_on.mean()), 5),
+                "mean_rate_ungated": round(float(rates_off.mean()), 5)},
+        note=(f"{moved:,} neurons shift when the dopaminergic pathway is silenced "
+              f"({rel:.1%} mean rate change)") if ok
+             else "silencing the modulatory pathway changed nothing: gate is inert")
+
+
 # --------------------------------------------------------------------------- #
 
 def run_all(conn: Connectome, circuits=("gate_readout", "compass", "descending"),
@@ -314,6 +355,8 @@ def run_all(conn: Connectome, circuits=("gate_readout", "compass", "descending")
         ir = from_library(conn, key)
         rs = [eval_roundtrip(ir), eval_compiles(ir), eval_c_equivalence(ir),
               eval_throughput(ir), eval_quant_fidelity(ir), eval_budget_fit(ir)]
+        if ir.n_mod_edges:
+            rs.append(eval_gating_changes_behaviour(ir))
         per_circuit[key] = [asdict(r) for r in rs]
         if verbose:
             print(f"\n--- {key} ({ir.n_neurons:,} neurons, {ir.n_edges:,} edges) ---")

@@ -147,7 +147,7 @@ so.
 
 ## What is verified, and what is not
 
-**Verified by measurement, under test (`pytest tests/`, 15 passing):**
+**Verified by measurement, under test (`pytest tests/` 15 passing, `flyforge eval` 31/31):**
 
 - The emitted C is **bit-identical to the numpy reference for 64/64 ticks**, on every
   circuit tested — same Q8.8 fixed point, same saturation, same refractory handling
@@ -161,6 +161,12 @@ so.
 - Motor decoding covers all six legs × five joints, 100% joint coverage on
   hexapod/quadruped/biped
 - The budget solver returns `None` rather than an over-budget artifact when nothing fits
+- **Gating is functional, not decorative**: silencing the dopaminergic pathway shifts
+  3,524 neurons / 27.3% mean rate in `gate`, 229 / 16.3% in `compass`. Compiling those
+  edges additively would leave a well-formed graph with the gating silently gone, so
+  this is asserted rather than assumed
+- `legs_all` (11,790 neurons, 1,569,085 edges) stays bit-identical to reference and runs
+  3,076 tick/s; int8 costs 0.611% drive error and 2 sign flips
 
 **Not yet true:**
 
