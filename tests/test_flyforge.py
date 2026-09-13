@@ -14,7 +14,17 @@ from neuraltransistor.quant.quantize import compress, input_drive, prune
 
 @pytest.fixture(scope="session")
 def conn():
-    return Connectome.load(verbose=False)
+    """The connectome, or a clean skip.
+
+    Most of this file asserts numbers that only exist once the 1.1 GB release is on
+    disk. Erroring when it is absent makes a machine without the data look like a
+    machine with a broken build, which is what it did in CI. Skipping says the true
+    thing: these assertions were not checked here.
+    """
+    try:
+        return Connectome.load(verbose=False)
+    except FileNotFoundError as e:
+        pytest.skip(f"connectome release not present: {e}")
 
 
 @pytest.fixture(scope="session")

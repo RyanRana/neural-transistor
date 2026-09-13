@@ -14,10 +14,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e . pytest
-      # The connectome release is 1.1 GB and is not fetched here, so this is the
-      # subset that does not need it. Everything that touches the index runs locally
-      # via `ntx eval`.
-      - run: pytest -q
+      # The connectome release is 1.1 GB and is not fetched here, so the tests that
+      # need the index skip rather than fail -- `-rs` prints which ones, so the gap is
+      # visible in the log instead of implied. The full suite runs locally via
+      # `pytest` + `ntx eval`.
+      - run: pytest -q -rs
 
   # Cross-compile the emitted kernel for Cortex-M, boot it, and check the digest it
   # computed against the one derived from the numpy reference. This needs no connectome
