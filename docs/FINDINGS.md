@@ -52,7 +52,7 @@ P(real | w) = (observed(w) − 0.280) / (0.992 − 0.280)
 graph.** A threshold becomes a stated confidence:
 
 ```bash
-flyforge compress compass --p-real 0.95   # → weight ≥ 6, keeps 51% of edges, 90% of synapses
+neuraltransistor compress compass --p-real 0.95   # → weight ≥ 6, keeps 51% of edges, 90% of synapses
 ```
 
 **Scope, stated plainly.** Reproducibility is measured at the level of a *type pair*, so
@@ -63,7 +63,7 @@ Schlegel et al. report roughly 42% cross-hemisphere recurrence for single-synaps
 connections at the *cell* level; the gap between that and our 83.9% is exactly the
 type-vs-cell distinction, not a contradiction.
 
-Code: `flyforge/circuit/noise.py`, `flyforge noise`.
+Code: `neuraltransistor/circuit/noise.py`, `neuraltransistor noise`.
 
 ---
 
@@ -87,7 +87,7 @@ Measured on the 708 VNC motor neurons:
 |---|--:|--:|
 | labelled inhibitory | **304** | **10** |
 
-166 sign flips applied and reported. `flyforge/circuit/sign.py`; regression test in
+166 sign flips applied and reported. `neuraltransistor/circuit/sign.py`; regression test in
 `eval_nmj_guard` so it cannot be "simplified" back.
 
 Sign coverage is also not uniform, and the place it is worst is the place it matters
@@ -137,7 +137,7 @@ as ring attractors."
 the honest statement of what a connectome is worth, and it is why dynamics fitting is a
 milestone rather than a footnote. See [DYNAMICS.md](DYNAMICS.md).
 
-Code: `flyforge/evals/functional.py`.
+Code: `neuraltransistor/evals/functional.py`.
 
 ---
 
@@ -176,7 +176,7 @@ their median signed/total ratio is 0.080 against 0.728 for everyone else.
 
 Normalising by **total** input magnitude instead: pruning to weight ≥6 reads as **5.6%**,
 not 20.5%, with r = 0.994 and 99.6% sign agreement. The signed normalisation overstated
-the damage fourfold. `flyforge/quant/quantize.py` reports the stable one, and keeps the
+the damage fourfold. `neuraltransistor/quant/quantize.py` reports the stable one, and keeps the
 unstable one alongside for comparison.
 
 ---

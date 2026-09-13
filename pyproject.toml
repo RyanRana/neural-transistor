@@ -1,7 +1,7 @@
 [project]
-name = "flyforge"
+name = "neural-transistor"
 version = "0.1.0"
-description = "Compile Drosophila connectome circuits into quantized controllers for insect-scale robots."
+description = "Neural Transistor - compile Drosophila connectome circuits into quantized controllers for real robots."
 requires-python = ">=3.11"
 dependencies = [
   "numpy>=1.26",
@@ -16,11 +16,11 @@ fit = ["cma>=3.3"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]
-flyforge = "flyforge.cli:main"
+ntx = "neuraltransistor.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["flyforge"]
+packages = ["neuraltransistor"]

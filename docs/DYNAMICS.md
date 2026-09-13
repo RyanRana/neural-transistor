@@ -5,7 +5,7 @@ A connectome is a strong prior, not a specification. It fixes the coupling *patt
 *sign*. Everything with units of time, voltage or gain is free.
 
 This page is the list of what is free, how much it matters, and who has pinned it down.
-flyforge keeps measured and fitted quantities in separate arrays precisely so this
+neuraltransistor keeps measured and fitted quantities in separate arrays precisely so this
 boundary stays visible: `CircuitIR.weight` is measured, `CircuitIR.dynamics` is not.
 
 ## The parameterization that works

@@ -35,7 +35,7 @@ not a measurement. Every intracellular recording disagrees:
 
 So **Δρ/Δφ ≈ 1.7–2.0, not ~1**: the fly is a heavily *blurred* sampler whose acceptance
 functions overlap their neighbours substantially. Using 5° makes the eye look far sharper
-than it is, and makes a camera look worse at matching it than it really is. flyforge
+than it is, and makes a camera look worse at matching it than it really is. neuraltransistor
 defaults to the measured 8.2°.
 
 This was a real bug here — the first version of `retina.py` used 5.0° and reported
@@ -86,7 +86,7 @@ event-camera drone is ~800 g. The budget closes on paper: a Crazyflie build land
 
 ## Status
 
-`flyforge/sensors/retina.py` builds the lattice and the sparse Gaussian resampler, and
+`neuraltransistor/sensors/retina.py` builds the lattice and the sparse Gaussian resampler, and
 reports which ommatidia the sensor cannot cover instead of feeding them zeros — a motion
 detector reads zeros as darkness, which is a different thing from no data.
 

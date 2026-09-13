@@ -1,19 +1,24 @@
-# flyforge
+# Neural Transistor
 
 Compile *Drosophila* connectome circuits into quantized controllers that run on
 milliwatt hardware.
 
-<img src="docs/img/ui.png" width="100%" alt="flyforge UI">
+Google and Janelia built the map. The query tools let you look at it. This is the
+toolchain that takes a piece of it, tells you which parts are real, shrinks it until it
+fits in kilobytes, tells you what the shrinking cost, and hands you C you can flash.
+See [what already exists vs what this adds](docs/WHERE-THIS-FITS.md).
+
+<img src="docs/img/ui.png" width="100%" alt="neuraltransistor UI">
 
 ---
 
 ## Install
 
 ```bash
-git clone <repo> && cd flyforge
+git clone <repo> && cd neuraltransistor
 uv venv --python 3.12 && uv pip install -e .
-export FLYFORGE_DATA=~/fly-connectome          # the three male-CNS .feather files
-flyforge index                                 # builds the CSR index, ~75 s, once
+export NTX_DATA=~/fly-connectome          # the three male-CNS .feather files
+neuraltransistor index                                 # builds the CSR index, ~75 s, once
 ```
 
 No account, no token. The male-CNS release is public:
@@ -22,7 +27,7 @@ No account, no token. The male-CNS release is public:
 ## API
 
 ```python
-import flyforge as ff
+import neuraltransistor as ff
 
 conn = ff.load()                          # 211,577 neurons, 26,028,386 edges (cached)
 ir   = ff.circuit(conn, "compass")        # 452 neurons, 54,290 edges, 188 KB
@@ -66,14 +71,14 @@ rt.run(200, drive)
 ## CLI
 
 ```bash
-flyforge list                             # the circuit library
-flyforge noise                            # the reproducibility curve
-flyforge extract compass -o compass.fcx
-flyforge compress compass --p-real 0.95 --budget-kb 120
-flyforge emit compass -o out/ --target mcu
-flyforge emit legs_all -o out/ --target ros2 --urdf my_robot.urdf
-flyforge eval                             # 33 evals
-flyforge ui                               # the page above, on :8765
+neuraltransistor list                             # the circuit library
+neuraltransistor noise                            # the reproducibility curve
+neuraltransistor extract compass -o compass.fcx
+neuraltransistor compress compass --p-real 0.95 --budget-kb 120
+neuraltransistor emit compass -o out/ --target mcu
+neuraltransistor emit legs_all -o out/ --target ros2 --urdf my_robot.urdf
+neuraltransistor eval                             # 33 evals
+neuraltransistor ui                               # the page above, on :8765
 ```
 
 ## The library
@@ -121,12 +126,13 @@ Both in detail, with the numbers and the code: **[docs/FINDINGS.md](docs/FINDING
 | [DYNAMICS.md](docs/DYNAMICS.md) | what the connectome does *not* contain, and who has fitted it |
 | [TARGETS.md](docs/TARGETS.md) | real chips, sourced power numbers, what has actually flown |
 | [SENSORS.md](docs/SENSORS.md) | mapping a camera onto a 886-ommatidium eye |
+| [WHERE-THIS-FITS.md](docs/WHERE-THIS-FITS.md) | what Google/Janelia already published, and what this adds |
 | [STATUS.md](docs/STATUS.md) | verified vs code-exists vs not built |
 | [NOTES.md](NOTES.md) | running log |
 
 ## Honesty
 
-`pytest tests/` — 15 passing. `flyforge eval` — 33 passing.
+`pytest tests/` — 15 passing. `neuraltransistor eval` — 33 passing.
 
 **Verified:** emitted C is bit-identical to the numpy reference for 64/64 ticks on every
 circuit up to 11,790 neurons · int8 costs 0.02–0.6% drive error at r ≥ 0.999 · the

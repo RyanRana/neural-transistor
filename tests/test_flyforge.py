@@ -2,14 +2,14 @@
 import numpy as np
 import pytest
 
-from flyforge.circuit import noise
-from flyforge.circuit.extract import LIBRARY, from_library
-from flyforge.circuit.sign import assign_signs, naive_signs
-from flyforge.data.source import Connectome
-from flyforge.evals import suite
-from flyforge.ir.graph import CircuitIR
-from flyforge.morph import retarget as R, spec as M, urdf
-from flyforge.quant.quantize import compress, input_drive, prune
+from neuraltransistor.circuit import noise
+from neuraltransistor.circuit.extract import LIBRARY, from_library
+from neuraltransistor.circuit.sign import assign_signs, naive_signs
+from neuraltransistor.data.source import Connectome
+from neuraltransistor.evals import suite
+from neuraltransistor.ir.graph import CircuitIR
+from neuraltransistor.morph import retarget as R, spec as M, urdf
+from neuraltransistor.quant.quantize import compress, input_drive, prune
 
 
 @pytest.fixture(scope="session")
@@ -140,7 +140,7 @@ def test_urdf_import(tmp_path):
 
 
 def test_budget_solver_refuses_rather_than_lying(compass):
-    from flyforge.quant.quantize import fit_budget
+    from neuraltransistor.quant.quantize import fit_budget
     out, rep, trials = fit_budget(compass, budget_kb=0.5, max_drive_err=0.01)
     assert out is None and rep is None    # nothing fits 0.5 KB; must not fake it
     assert trials
