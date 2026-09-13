@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e .
+      - run: pip install -e . pytest
       # The connectome release is 1.1 GB and is not fetched here, so this is the
       # subset that does not need it. Everything that touches the index runs locally
       # via `ntx eval`.
@@ -41,7 +41,11 @@ jobs:
           expect=$(grep -o 'DIGEST [0-9a-f]\{16\}' cilicon.yml | head -1)
           echo "expecting: $expect"
           # ARM semihosting writes to stderr, so fold it into stdout before grepping.
-          out=$(timeout 300 qemu-system-arm -M mps2-an385 -nographic -semihosting \
-                  -kernel firmware/valence/valence.elf 2>&1)
+          # Semihosting SYS_EXIT makes qemu return non-zero, which `set -e` would
+          # treat as failure before the output is ever inspected. What the console
+          # printed is the check, not the exit status.
+          out=$(timeout 300 qemu-system-arm -M mps2-an385 -nographic \
+                  -semihosting-config enable=on,target=native \
+                  -kernel firmware/valence/valence.elf 2>&1 || true)
           echo "$out"
           grep -qF "$expect" <<<"$out"
