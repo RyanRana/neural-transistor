@@ -1,16 +1,13 @@
-# Neural Transistor
-
-Compile circuits from a fly connectome into freestanding C for microcontrollers.
-
 ![Eight robots driven by one compiled fly circuit](docs/img/form-factors.gif)
 
 <sub>Eight published URDFs, imported unmodified, bound to one compiled `legs` circuit.
-**Cyan** joints are driven by a real antagonist muscle pair; **grey** joints are not
-driven. This is kinematic playback of joint commands — what `robot_state_publisher`
-shows in RViz, not a dynamics simulation. The sign and relative magnitude of every
-command come from the connectome; the step rhythm does not, and
-[Robots](#robots) says exactly which parts are which. Regenerate with
-`python demos/formfactors.py`.</sub>
+**Cyan** joints are driven by a real antagonist muscle pair. Kinematic playback, not a
+dynamics simulation: the joint commands come from the connectome, the step rhythm does
+not — [Robots](#robots) has the split.</sub>
+
+# Neural Transistor
+
+Compile circuits from a fly connectome into freestanding C for microcontrollers.
 
 `neuraltransistor` reads the published *Drosophila* male-CNS connectome, extracts a named
 circuit as a sparse signed graph, prunes it against a measured noise model, quantizes it
