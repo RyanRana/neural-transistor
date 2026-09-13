@@ -2,6 +2,16 @@
 
 Compile circuits from a fly connectome into freestanding C for microcontrollers.
 
+![Eight robots driven by one compiled fly circuit](docs/img/form-factors.gif)
+
+<sub>Eight published URDFs, imported unmodified, bound to one compiled `legs` circuit.
+**Cyan** joints are driven by a real antagonist muscle pair; **grey** joints are not
+driven. This is kinematic playback of joint commands — what `robot_state_publisher`
+shows in RViz, not a dynamics simulation. The sign and relative magnitude of every
+command come from the connectome; the step rhythm does not, and
+[Robots](#robots) says exactly which parts are which. Regenerate with
+`python demos/formfactors.py`.</sub>
+
 `neuraltransistor` reads the published *Drosophila* male-CNS connectome, extracts a named
 circuit as a sparse signed graph, prunes it against a measured noise model, quantizes it
 to int8, and emits C99 with no `malloc`, no libc beyond `memset`, and no floating point
@@ -159,6 +169,47 @@ emitter covers them. ESP32-S3 does not: per-tensor symmetric power-of-two only.
 Availability is tracked, because two obvious targets are gone: GreenWaves entered
 liquidation in January 2025, taking GAP9 with it, and every `lava-nc` repository was
 archived in May 2026. Both are flagged in the table rather than silently listed.
+
+## Robots
+
+`nt.morphology(urdf=...)` reads the robot's own URDF, `nt.retarget()` binds each limb to
+a fly leg and a gait phase, and `nt.emit(..., target="ros2")` writes an ament_python
+package around the compiled circuit. `demos/formfactors.py` runs that end to end against
+eight robots nobody here designed, and `demos/viewer.html` plays them side by side with
+the API calls that produced each one — the demo drops a copy of that page next to the
+data it needs, so open `artifacts/formfactors/index.html` after a run.
+
+| key | robot | form factor | URDF from | limbs | actuated bound | joints driven | gait |
+|---|---|---|---|--:|--:|--:|---|
+| `cf2x` | Crazyflie 2.X | quadrotor | utiasDSL/gym-pybullet-drones | 0 | 0/0 | 0 | — |
+| `a1` | Unitree A1 | quadruped | bulletphysics/bullet3 | 4 | 12/12 | 12 | trot |
+| `phantomx` | PhantomX Mark II | hexapod | HumaRobotics/phantomx_description | 6 | 18/18 | 18 | tripod |
+| `cassie` | Agility Cassie | biped | UMich-BipedLab/cassie_description | 2 | 14/14 | 8 | alternate |
+| `minitaur` | Ghost Minitaur | direct-drive quadruped | bulletphysics/bullet3 | 8 | 16/16 | 16 | bound |
+| `panda` | Franka Emika Panda | 7-DOF arm | bulletphysics/bullet3 | 3 | 9/9 | 6 | — |
+| `husky` | Clearpath Husky | skid-steer rover | bulletphysics/bullet3 | 4 | 4/4 | 4 | walk4 |
+| `racecar` | MIT RACECAR | Ackermann car | bulletphysics/bullet3 | 4 | 6/6 | 6 | trot |
+
+"actuated bound" is the invariant worth watching: every actuated joint in the file ends
+up in exactly one limb, so a robot cannot import as a quiet no-op. Pointing the importer
+at these eight is what caught the three ways it used to fail on real files — it stopped
+at the first `fixed` joint, it matched sides and segments as substrings so `_l` matched
+the word "link", and it assigned gait phases by list position, which put both of a
+hexapod's front legs in the same tripod group. All three are fixed and tested.
+
+**The drone binds nothing**, and that is the correct answer: a quadrotor has no joints.
+It is driven instead from the fly's wing motor pools — power muscles to collective
+thrust, the left/right steering-muscle difference to roll — which is demo mixing, not
+library code.
+
+**What comes from the fly, and what does not.** The connectome supplies which neurons,
+with what sign, and every joint command as `rate(agonist) − rate(antagonist)` over the
+muscle names the release annotates. It does **not** supply the rhythm: the unfitted
+circuit settles to a steady, leg-differentiated posture and does not oscillate, so the
+step cycle comes from `retarget.phase_oscillator`, the Kuramoto ring the library ships
+for this case. Swing amplitude is scaled to each robot's own URDF joint limits. Nothing
+here is a dynamics simulation and no gait has been shown to carry a load — see
+[STATUS.md](docs/STATUS.md) for what is measured and what is not.
 
 ## Limitations
 

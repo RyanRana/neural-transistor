@@ -15,7 +15,7 @@ Last updated 2026-09-13.
 | F4 | Bilateral-reproducibility noise model → P(real \| w) | **verified** |
 | F5 | Prune / quantize / budget-solve to a byte target | **verified** |
 | F6 | int8 C emitter, bit-identical to reference | **verified** |
-| F7 | Morphology: muscle→joint map, URDF import, gait retarget | **verified** |
+| F7 | Morphology: muscle→joint map, URDF import, gait retarget | **verified** (8 real URDFs) |
 | F8 | ROS 2 package emitter | code exists |
 | F9 | Hex-lattice retina resampler | **verified** (exact retinotopy, 99.9%) |
 | F10 | Local UI | **verified** |
@@ -55,6 +55,27 @@ compass and descending. Clean under `-Wall -Wextra -Werror`. Throughput on host:
 **Morphology (F7).** 34 motor decodes from `legs`: 3 leg pairs × 5 joints + 4 wing
 channels. 100% joint coverage on hexapod, quadruped and biped at 3 DOF. URDF import
 reads 12 actuated joints / 4 limbs from the example quadruped.
+
+Run against **eight published URDFs** nobody here wrote — Crazyflie 2.X, Unitree A1,
+PhantomX, Cassie, Minitaur, Franka Panda, Husky, MIT RACECAR — every actuated joint in
+every file lands in exactly one limb (`n_actuated_in_limbs == n_actuated`, 0/0 through
+18/18), and 70 of 80 bound joints resolve to a fly muscle pair. PhantomX maps one-for-one
+onto the fly's six legs.
+
+That run is what caught three importer failures, each of which had been invisible against
+the synthetic example. The walk stopped at the first `fixed` joint, so five of the eight
+imported as **zero limbs** and the A1 as four one-DOF legs instead of four three-DOF legs.
+Side and segment were matched as substrings, so `_l` matched the word "link" and every
+Husky and Minitaur limb read as left, while `1` matched PhantomX's `c1_rf` and put all six
+legs on the front segment. And gait phases were assigned by **list position**, which is
+only correct for the builtin limb ordering — PhantomX lists all three right legs first, so
+the published tripod vector put both front legs in the same group. All three are fixed,
+and each has a regression test built from the URDF shape that exposed it.
+
+Two caveats the run surfaces rather than hides: role inference is by chain depth, so on
+Cassie it binds the fly's `coxa_yaw` to hip *abduction* rather than flexion, and Cassie's
+four-bar leg is a closed loop that URDF can only express as an open tree. Both are
+reported through `role_confidence` and `limbs_over_4dof`.
 
 **Gating (F3/F6).** Silencing the dopaminergic pathway moves the circuit, so the
 multiplicative compilation is load-bearing rather than decorative: `gate` 3,524 neurons

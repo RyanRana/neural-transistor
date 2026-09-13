@@ -149,6 +149,100 @@ def test_urdf_import(tmp_path):
     assert all("knee" in l.joint_roles for l in spec.limbs)
 
 
+#: The two shapes every real URDF has and the toy example does not: the robot hangs
+#: off a base_footprint through a fixed joint, each hip carries a fixed decoration,
+#: and the limb forks into two actuated branches at the end.
+_REAL_SHAPED_URDF = """<?xml version="1.0"?>
+<robot name="shaped">
+  <link name="base_footprint"/><link name="chassis"/>
+  <joint name="chassis_joint" type="fixed">
+    <parent link="base_footprint"/><child link="chassis"/></joint>
+  <link name="c1_rf"/><link name="c1_rf_shell"/><link name="thigh_rf"/><link name="tibia_rf"/>
+  <joint name="j_c1_rf" type="revolute"><parent link="chassis"/><child link="c1_rf"/>
+    <axis xyz="0 0 1"/></joint>
+  <joint name="shell_rf" type="fixed"><parent link="c1_rf"/><child link="c1_rf_shell"/></joint>
+  <joint name="j_thigh_rf" type="revolute"><parent link="c1_rf"/><child link="thigh_rf"/>
+    <axis xyz="0 1 0"/></joint>
+  <joint name="j_tibia_rf" type="revolute"><parent link="thigh_rf"/><child link="tibia_rf"/>
+    <axis xyz="0 1 0"/></joint>
+  <link name="wrist"/><link name="leftfinger"/><link name="rightfinger"/>
+  <joint name="wrist_joint" type="fixed"><parent link="tibia_rf"/><child link="wrist"/></joint>
+  <joint name="finger_joint1" type="prismatic"><parent link="wrist"/>
+    <child link="leftfinger"/><axis xyz="0 1 0"/></joint>
+  <joint name="finger_joint2" type="prismatic"><parent link="wrist"/>
+    <child link="rightfinger"/><axis xyz="0 1 0"/></joint>
+</robot>
+"""
+
+
+def test_urdf_import_looks_through_fixed_joints(tmp_path):
+    """A fixed joint is a rigid offset, never a limb boundary.
+
+    Stopping at the first one imported five of eight real robots (PhantomX, Minitaur,
+    Husky, racecar, Crazyflie) as zero limbs, and the Unitree A1 as four one-DOF legs
+    instead of four three-DOF legs -- the "any robot" promise failing silently.
+    """
+    p = tmp_path / "shaped.urdf"
+    p.write_text(_REAL_SHAPED_URDF)
+    spec, rep = urdf.parse(p)
+
+    leg = next(l for l in spec.limbs if l.name == "c1_rf")
+    assert leg.joints == ["j_c1_rf", "j_thigh_rf", "j_tibia_rf"]
+    assert leg.joint_roles[:3] == ["coxa_yaw", "trochanter", "knee"]
+    # the fork into two fingers ends the leg and starts two more limbs, rather than
+    # being swallowed or dropped
+    assert {l.name for l in spec.limbs} == {"c1_rf", "leftfinger", "rightfinger"}
+    # the invariant that makes a silent miss impossible to ship
+    assert rep["n_actuated_in_limbs"] == rep["n_actuated"] == 5
+
+
+def test_side_and_segment_are_tokens_not_substrings():
+    """``_l`` is in the word "link", and ``1`` is in the PhantomX link name ``c1_rr``."""
+    assert urdf._infer_side("front_left_wheel_link") == "L"
+    assert urdf._infer_side("rear_right_wheel_link") == "R"
+    assert urdf._infer_side("motor_front_rightR_link") == "R"   # camelCase hump
+    assert urdf._infer_side("panda_leftfinger") == "L"
+    assert urdf._infer_side("panda_link1") == ""                # an arm has no side
+
+    # a hexapod whose legs are named right/left x front/middle/rear must land on the
+    # fly's own six legs, one for one
+    legs = [M.Limb(name=f"c1_{s}{p}", joints=[f"j_c1_{s}{p}"], joint_roles=["coxa_yaw"],
+                   side=urdf._infer_side(f"c1_{s}{p}"), index=i)
+            for i, (s, p) in enumerate([("r", "f"), ("r", "m"), ("r", "r"),
+                                        ("l", "f"), ("l", "m"), ("l", "r")])]
+    src = R.infer_sources(M.MorphologySpec("phantomx", legs))
+    assert src == {"c1_rf": ("front", "R"), "c1_rm": ("middle", "R"),
+                   "c1_rr": ("hind", "R"), "c1_lf": ("front", "L"),
+                   "c1_lm": ("middle", "L"), "c1_lr": ("hind", "L")}
+
+
+def test_gait_phases_follow_the_legs_not_the_list_order():
+    """A tripod is a fact about which legs, not about which list positions.
+
+    The builtin hexapod lists ``L1 R1 L2 R2 L3 R3``; PhantomX lists all three right
+    legs and then all three left ones. Assigning the published phase vector by position
+    puts both front legs in the same group, which is not a tripod.
+    """
+    legs = [M.Limb(name=f"c1_{s}{p}", joints=[f"j_c1_{s}{p}"], joint_roles=["coxa_yaw"],
+                   side=s.upper(), index=i)
+            for i, (s, p) in enumerate([("r", "f"), ("r", "m"), ("r", "r"),
+                                        ("l", "f"), ("l", "m"), ("l", "r")])]
+    morph = M.MorphologySpec("phantomx", legs)
+    phases, name = R.infer_phases(morph, "tripod", R.infer_sources(morph))
+    assert name == "tripod"
+    # right-front, left-middle and right-hind step together; the other three alternate
+    assert phases["c1_rf"] == phases["c1_lm"] == phases["c1_rr"]
+    assert phases["c1_lf"] == phases["c1_rm"] == phases["c1_lr"]
+    assert phases["c1_rf"] != phases["c1_lf"]
+
+    quad = M.MorphologySpec("a1", [
+        M.Limb(name=n, joints=[f"{n}_j"], joint_roles=["coxa_yaw"], side=n[1], index=i)
+        for i, n in enumerate(["FR_hip", "FL_hip", "RR_hip", "RL_hip"])])
+    ph, _ = R.infer_phases(quad, "trot", R.infer_sources(quad))
+    assert ph["FL_hip"] == ph["RR_hip"] and ph["FR_hip"] == ph["RL_hip"]   # diagonals
+    assert ph["FL_hip"] != ph["FR_hip"]
+
+
 def test_budget_solver_refuses_rather_than_lying(compass):
     from neuraltransistor.quant.quantize import fit_budget
     out, rep, trials = fit_budget(compass, budget_kb=0.5, max_drive_err=0.01)

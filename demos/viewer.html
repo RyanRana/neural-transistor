@@ -1,0 +1,582 @@
+<title>Eight Bodies, One Connectome</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --ground:#0E1117; --panel:#161C25; --panel-2:#1C2431; --rule:#232C39;
+  --ink:#E4EAF2; --ink-2:#9AA7BA; --ink-3:#6C7A8E;
+  --signal:#56CCF2; --signal-dim:#2C7F9E; --amber:#FF8A4C; --amber-dim:#8A4A28;
+  --good:#6EE7A8; --viewport:#0B0E13;
+  --shadow:0 1px 0 rgba(255,255,255,.03), 0 8px 24px -12px rgba(0,0,0,.8);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --ground:#F4F6F9; --panel:#FFFFFF; --panel-2:#EDF1F6; --rule:#D6DEE8;
+    --ink:#131A23; --ink-2:#4E5B6E; --ink-3:#7C8899;
+    --signal:#0B7FA8; --signal-dim:#8EC9DF; --amber:#B4531F; --amber-dim:#E0B49C;
+    --good:#127A4B; --viewport:#FBFCFD;
+    --shadow:0 1px 2px rgba(19,26,35,.06), 0 8px 22px -14px rgba(19,26,35,.28);
+  }
+}
+:root[data-theme="light"]{
+  --ground:#F4F6F9; --panel:#FFFFFF; --panel-2:#EDF1F6; --rule:#D6DEE8;
+  --ink:#131A23; --ink-2:#4E5B6E; --ink-3:#7C8899;
+  --signal:#0B7FA8; --signal-dim:#8EC9DF; --amber:#B4531F; --amber-dim:#E0B49C;
+  --good:#127A4B; --viewport:#FBFCFD;
+  --shadow:0 1px 2px rgba(19,26,35,.06), 0 8px 22px -14px rgba(19,26,35,.28);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:15px; line-height:1.55; margin:0;
+}
+.wrap{max-width:1440px; margin:0 auto; padding-inline:20px; padding-block:0 72px}
+code,.mono,pre{font-family:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace}
+.num{font-variant-numeric:tabular-nums}
+h1,h2,h3{text-wrap:balance; margin:0}
+a{color:var(--signal)}
+:focus-visible{outline:2px solid var(--signal); outline-offset:2px; border-radius:3px}
+
+/* ---------- masthead ---------- */
+header{padding-block:40px 26px; border-bottom:1px solid var(--rule)}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--ink-3);
+}
+h1{font-size:clamp(28px,4.2vw,44px); line-height:1.08; letter-spacing:-.02em; margin-block:10px 12px}
+.lede{color:var(--ink-2); max-width:66ch; font-size:16px}
+.lede strong{color:var(--ink); font-weight:600}
+
+.facts{
+  display:flex; flex-wrap:wrap; gap:0; margin-top:24px;
+  border:1px solid var(--rule); border-radius:8px; overflow:hidden; background:var(--panel);
+}
+.fact{flex:1 1 132px; padding:11px 14px; border-right:1px solid var(--rule)}
+.fact:last-child{border-right:0}
+.fact dt{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3)}
+.fact dd{margin:2px 0 0; font-family:"IBM Plex Mono",monospace; font-size:15px; font-variant-numeric:tabular-nums}
+
+/* ---------- pipeline ---------- */
+.section-head{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-block:44px 14px}
+.section-head h2{font-size:19px; letter-spacing:-.01em}
+.section-head p{margin:0; color:var(--ink-2); font-size:13.5px; max-width:62ch}
+
+.pipe{display:grid; gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:8px; overflow:hidden}
+.pipe-row{display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) 62px; gap:14px;
+  background:var(--panel); padding:9px 14px; align-items:baseline}
+.pipe-row code{font-size:12.5px; color:var(--ink); word-break:break-word}
+.pipe-row .res{font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--signal); word-break:break-word}
+.pipe-row .ms{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-3); text-align:right; font-variant-numeric:tabular-nums}
+.pipe-note{grid-column:1/-1; font-size:12px; color:var(--ink-3); margin-top:1px}
+
+/* ---------- transport ---------- */
+.transport{
+  position:sticky; top:0; z-index:20; margin-top:14px;
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  background:color-mix(in srgb, var(--ground) 88%, transparent);
+  backdrop-filter:blur(8px);
+  border:1px solid var(--rule); border-radius:8px; padding:9px 13px;
+}
+button{font:inherit; color:inherit; background:var(--panel-2); border:1px solid var(--rule);
+  border-radius:6px; padding:5px 12px; cursor:pointer}
+button:hover{border-color:var(--signal-dim)}
+button[aria-pressed="true"]{background:var(--signal); border-color:var(--signal); color:var(--ground)}
+.transport label{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3)}
+input[type=range]{accent-color:var(--signal); width:170px; max-width:38vw}
+.tick{font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums}
+
+/* ---------- grid of viewports ---------- */
+.grid{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-top:14px}
+@media (max-width:1180px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:620px){.grid{grid-template-columns:1fr}}
+
+.bot{
+  background:var(--panel); border:1px solid var(--rule); border-radius:9px;
+  overflow:hidden; display:flex; flex-direction:column; box-shadow:var(--shadow);
+  cursor:pointer; text-align:left; padding:0; transition:border-color .15s;
+}
+.bot:hover{border-color:var(--signal-dim)}
+.bot[aria-expanded="true"]{border-color:var(--signal)}
+.bot-head{padding:10px 12px 8px; display:flex; justify-content:space-between; gap:8px; align-items:flex-start}
+.bot-head h3{font-size:14.5px; letter-spacing:-.005em; line-height:1.25}
+.bot-head .kind{font-size:11.5px; color:var(--ink-3); margin-top:1px}
+.badge{
+  font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.06em;
+  border:1px solid var(--rule); border-radius:999px; padding:2px 7px; color:var(--ink-2);
+  white-space:nowrap; flex-shrink:0;
+}
+.badge.wing{color:var(--amber); border-color:var(--amber-dim)}
+.badge.warn{color:var(--amber); border-color:var(--amber-dim)}
+canvas{display:block; width:100%; height:auto; aspect-ratio:4/3; background:var(--viewport);
+  border-block:1px solid var(--rule); max-width:100%}
+.bot-foot{padding:8px 12px 10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+.meter{flex:1 1 80px; height:4px; border-radius:2px; background:var(--panel-2); overflow:hidden; min-width:54px}
+.meter i{display:block; height:100%; background:var(--signal)}
+.bot-foot .n{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-2); font-variant-numeric:tabular-nums}
+
+/* ---------- detail ---------- */
+.detail{margin-top:16px; border:1px solid var(--signal-dim); border-radius:9px; background:var(--panel); overflow:hidden}
+.detail[hidden]{display:none!important}
+.detail-top{display:flex; justify-content:space-between; gap:16px; align-items:flex-start;
+  padding:16px 18px; border-bottom:1px solid var(--rule); flex-wrap:wrap}
+.detail-top h3{font-size:20px; letter-spacing:-.015em}
+.detail-top .src{font-size:12.5px; color:var(--ink-2); margin-top:3px}
+.detail-note{padding:14px 18px; color:var(--ink-2); font-size:13.5px; max-width:78ch; border-bottom:1px solid var(--rule)}
+.detail-cols{display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:0}
+@media (max-width:900px){.detail-cols{grid-template-columns:1fr}}
+.col{padding:16px 18px; min-width:0}
+.col + .col{border-left:1px solid var(--rule)}
+@media (max-width:900px){.col + .col{border-left:0; border-top:1px solid var(--rule)}}
+.col h4{font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); margin:0 0 10px}
+pre{background:var(--panel-2); border:1px solid var(--rule); border-radius:6px; padding:11px 13px;
+  font-size:12px; line-height:1.6; overflow-x:auto; margin:0; color:var(--ink-2)}
+table{border-collapse:collapse; width:100%; font-size:12.5px}
+.tablewrap{overflow-x:auto}
+th{text-align:left; font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:500; padding:0 10px 7px 0; white-space:nowrap}
+td{padding:5px 10px 5px 0; border-top:1px solid var(--rule); font-family:"IBM Plex Mono",monospace;
+  font-variant-numeric:tabular-nums; white-space:nowrap}
+td.role{color:var(--signal)}
+.bar{display:inline-block; height:7px; background:var(--signal); border-radius:1px; vertical-align:middle}
+.bar.neg{background:var(--amber)}
+
+/* ---------- ledger + gifs ---------- */
+.ledger{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px}
+@media (max-width:820px){.ledger{grid-template-columns:1fr}}
+.card{background:var(--panel); border:1px solid var(--rule); border-radius:9px; padding:15px 17px}
+.card h3{font-size:13px; letter-spacing:.02em; display:flex; align-items:center; gap:8px}
+.dot{width:8px; height:8px; border-radius:50%; flex-shrink:0}
+.card ul{margin:10px 0 0; padding-left:17px; color:var(--ink-2); font-size:13.5px}
+.card li{margin-bottom:6px}
+.card li strong{color:var(--ink); font-weight:600}
+
+.gifs{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px}
+@media (max-width:1080px){.gifs{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.gifs{grid-template-columns:1fr}}
+.gif{background:var(--panel); border:1px solid var(--rule); border-radius:9px; overflow:hidden}
+.gif img{display:block; width:100%; height:auto; max-width:100%; background:var(--viewport)}
+.gif figcaption{padding:8px 12px 10px; font-size:12px; color:var(--ink-2)}
+.gif figcaption b{color:var(--ink); font-weight:600; font-size:13px}
+
+footer{margin-top:52px; padding-top:18px; border-top:1px solid var(--rule); color:var(--ink-3); font-size:12.5px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">neuraltransistor · male-CNS v1.0 · circuit <span id="hd-circuit"></span></div>
+  <h1>Eight bodies, one connectome</h1>
+  <p class="lede">One fly circuit &mdash; the six leg motor pools of the ventral nerve cord and the
+  interneurons that couple them &mdash; compiled once and bound to eight robots that already exist.
+  Each robot is imported from <strong>its own published URDF</strong>, unmodified. Every joint you see
+  move is driven by <code>rate(agonist) &minus; rate(antagonist)</code> across a real antagonist muscle
+  pair, resolved through the muscle names the connectome annotates.</p>
+  <dl class="facts" id="facts"></dl>
+</header>
+
+<div class="section-head">
+  <h2>The pipeline, once</h2>
+  <p>Executed, not transcribed &mdash; the demo evaluates these strings and prints what they returned,
+  so the listing cannot drift from the run. All eight robots share this circuit.</p>
+</div>
+<div class="pipe" id="pipe"></div>
+
+<div class="section-head">
+  <h2>Eight form factors</h2>
+  <p>Kinematic playback of the joint commands, the way <code>robot_state_publisher</code> shows them in
+  RViz. Cyan links are driven by a fly muscle pair; grey links are along for the ride. Select a robot
+  for its own API calls and its joint table.</p>
+</div>
+
+<div class="transport">
+  <button id="play" aria-pressed="true">Pause</button>
+  <label for="scrub">Frame</label>
+  <input type="range" id="scrub" min="0" max="89" value="0">
+  <span class="tick" id="tick">00 / 90</span>
+  <label for="cam">Camera</label>
+  <input type="range" id="cam" min="0" max="360" value="35">
+  <span class="tick" id="camv">35&deg;</span>
+  <button id="theme">Light</button>
+</div>
+
+<div class="grid" id="grid"></div>
+<section class="detail" id="detail" hidden aria-live="polite"></section>
+
+<div class="section-head">
+  <h2>What is measured, and what is not</h2>
+  <p>The distinction is the point of the project, so it is on the page rather than in a footnote.</p>
+</div>
+<div class="ledger">
+  <div class="card">
+    <h3><span class="dot" style="background:var(--good)"></span>From the fly</h3>
+    <ul>
+      <li><strong>Which neurons, and with what sign.</strong> Structure comes from the measurement;
+        there is no training step.</li>
+      <li><strong>Every joint command.</strong> Motor neurons are annotated by the muscle they
+        innervate, so a joint is an antagonist pair and the command is the rate difference.</li>
+      <li><strong>Which limb gets which circuit.</strong> Front, middle and hind leg pools bind to
+        the robot limb that resolved to that segment.</li>
+      <li><strong>The int8 arithmetic.</strong> Pruned at p(real)=0.95, quantised to 8 bits, ticked
+        by the same reference runtime the emitted C is checked against.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3><span class="dot" style="background:var(--amber)"></span>Added for this demo</h3>
+    <ul>
+      <li><strong>The rhythm.</strong> The unfitted circuit settles to a steady, leg-differentiated
+        posture and does not oscillate. The step cycle is
+        <code>retarget.phase_oscillator</code>, the Kuramoto ring the library ships for exactly this
+        case, holding the retargeter's own gait phases.</li>
+      <li><strong>The "go" signal.</strong> The <code>legs</code> circuit has no input port &mdash;
+        the descending neurons that start walking live in a different circuit &mdash; so a tonic
+        Q8.8 drive stands in for them.</li>
+      <li><strong>Swing amplitude and within-leg phase.</strong> Scaled to each robot's own URDF
+        joint limits, offset by the textbook quarter cycle. Absolute timing does not transfer from
+        a fly leg to a robot leg.</li>
+      <li><strong>Rotor mixing.</strong> Wing power and steering muscles to thrust and roll, for the
+        quadrotor only.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3><span class="dot" style="background:var(--ink-3)"></span>Not simulated at all</h3>
+    <ul>
+      <li><strong>Contact, gravity, mass, torque.</strong> Nothing here is a dynamics simulation;
+        the robots are posed, not balanced.</li>
+      <li><strong>ROS 2 itself.</strong> The packages are generated and complete, but
+        <code>rclpy</code> is not a dependency of this repo and the node has never been spun.</li>
+      <li><strong>Silicon.</strong> No hardware, and no measured power figure anywhere.</li>
+      <li><strong>Meshes.</strong> Link geometry is the URDF's own primitives and joint frames;
+        visual meshes were not fetched.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section-head">
+  <h2>Loops</h2>
+  <p>The same eight runs, rendered from the same baked kinematics &mdash; three seconds, three step
+  cycles.</p>
+</div>
+<div class="gifs" id="gifs"></div>
+
+<footer id="foot"></footer>
+</div>
+
+<script src="data.js"></script>
+<script>
+(function(){
+  "use strict";
+  var D = window.FF;
+  if(!D){ document.getElementById("grid").textContent = "data.js failed to load."; return; }
+
+  var EL = 22 * Math.PI/180, az = 35 * Math.PI/180;
+  var frame = 0, playing = true, NF = D.robots[0].frames.length;
+
+  /* ---------- masthead numbers ---------- */
+  document.getElementById("hd-circuit").textContent = D.circuit;
+  var facts = [
+    ["Neurons",     D.n_neurons.toLocaleString()],
+    ["Edges kept",  D.n_edges.toLocaleString()],
+    ["Prune p(real)", D.p_real.toFixed(2)],
+    ["Weights",     D.bits + "-bit"],
+    ["Drive error", (D.quant.drive_err*100).toFixed(2) + "%"],
+    ["Sign flips",  D.quant.sign_flips],
+    ["Spikes / tick", Math.round(D.spikes_per_tick).toLocaleString()],
+    ["Tick",        D.tick_dt_ms + " ms"]
+  ];
+  document.getElementById("facts").innerHTML = facts.map(function(f){
+    return '<div class="fact"><dt>'+f[0]+'</dt><dd>'+f[1]+'</dd></div>';
+  }).join("");
+
+  function esc(s){ return String(s).replace(/[&<>]/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c]; }); }
+
+  function callRows(log){
+    return log.map(function(c){
+      return '<div class="pipe-row"><code>'+esc(c.code)+'</code>'+
+        '<span class="res">'+esc(c.result)+'</span>'+
+        '<span class="ms">'+c.ms+' ms</span>'+
+        (c.note ? '<span class="pipe-note">'+esc(c.note)+'</span>' : '')+'</div>';
+    }).join("");
+  }
+  document.getElementById("pipe").innerHTML = callRows(D.shared_api);
+
+  /* ---------- geometry ---------- */
+  function proj(p, s, cx, cy){
+    var ca=Math.cos(az), sa=Math.sin(az), ce=Math.cos(EL), se=Math.sin(EL);
+    var x = p[0]*ca + p[1]*sa, y = -p[0]*sa + p[1]*ca;
+    return [cx + s*x, cy - s*(p[2]*ce - y*se)];
+  }
+  function xform(m, v){
+    return [ m[0]*v[0]+m[1]*v[1]+m[2]*v[2]+m[3],
+             m[4]*v[0]+m[5]*v[1]+m[6]*v[2]+m[7],
+             m[8]*v[0]+m[9]*v[1]+m[10]*v[2]+m[11] ];
+  }
+
+  /* Every world point, over every frame: used for the centre once, and for the fit
+     whenever the camera moves. Sub-sampled over frames so dragging stays smooth. */
+  D.robots.forEach(function(r){
+    var pts = [], step = Math.max(1, Math.round(r.frames.length/12));
+    for(var f=0; f<r.frames.length; f+=step){
+      var T = r.frames[f];
+      for(var name in r.links){
+        var m = T[name]; if(!m) continue;
+        var segs = r.links[name];
+        for(var i=0;i<segs.length;i++){
+          pts.push(xform(m, segs[i][0])); pts.push(xform(m, segs[i][1]));
+        }
+      }
+    }
+    if(!pts.length) pts = [[0,0,0]];
+    var c = [0,0,0];
+    pts.forEach(function(p){ c[0]+=p[0]; c[1]+=p[1]; c[2]+=p[2]; });
+    r._ctr = [c[0]/pts.length, c[1]/pts.length, c[2]/pts.length];
+    r._pts = pts;
+    r._fitAz = null;
+  });
+
+  function fit(r, W, H){
+    if(r._fitAz === az) return r._fit;
+    var lo=[1e9,1e9], hi=[-1e9,-1e9], ct=r._ctr;
+    for(var i=0;i<r._pts.length;i++){
+      var p=r._pts[i], q=proj([p[0]-ct[0],p[1]-ct[1],p[2]-ct[2]],1,0,0);
+      if(q[0]<lo[0])lo[0]=q[0]; if(q[0]>hi[0])hi[0]=q[0];
+      if(q[1]<lo[1])lo[1]=q[1]; if(q[1]>hi[1])hi[1]=q[1];
+    }
+    var pad = 26;
+    var s = Math.min((W-2*pad)/Math.max(hi[0]-lo[0],1e-6),
+                     (H-2*pad)/Math.max(hi[1]-lo[1],1e-6));
+    r._fit = { s:s, cx: W/2 - s*(lo[0]+hi[0])/2, cy: H/2 - s*(lo[1]+hi[1])/2,
+               span: Math.max(hi[0]-lo[0], hi[1]-lo[1])/Math.max(s,1e-6) };
+    r._fitAz = az;
+    return r._fit;
+  }
+
+  var css = getComputedStyle(document.documentElement);
+  function tok(n){ return css.getPropertyValue(n).trim(); }
+  var COL = {};
+  function readTokens(){
+    css = getComputedStyle(document.documentElement);
+    COL = { bone:tok("--ink-3"), driven:tok("--signal"), hot:tok("--amber"),
+            grid:tok("--rule"), vp:tok("--viewport") };
+    D.robots.forEach(function(r){ r._fitAz = null; });
+  }
+  readTokens();
+
+  function draw(r){
+    var cv = r._cv, ctx = r._ctx, dpr = Math.min(window.devicePixelRatio||1, 2);
+    var W = cv.clientWidth, H = Math.round(W*3/4);
+    if(cv.width !== Math.round(W*dpr) || cv.height !== Math.round(H*dpr)){
+      cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr);
+      r._fitAz = null;
+    }
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,W,H);
+
+    var F = fit(r, W, H), T = r.frames[Math.min(frame, r.frames.length-1)], ct = r._ctr;
+    function P(v){ return proj([v[0]-ct[0], v[1]-ct[1], v[2]-ct[2]], F.s, F.cx, F.cy); }
+
+    /* ground grid */
+    var g = F.span*0.55, z0 = -ct[2];
+    ctx.strokeStyle = COL.grid; ctx.lineWidth = 1; ctx.globalAlpha = .65;
+    ctx.beginPath();
+    for(var i=-3;i<=3;i++){
+      var u = i*g/3;
+      var a1=proj([u,-g,z0],F.s,F.cx,F.cy), b1=proj([u,g,z0],F.s,F.cx,F.cy);
+      var a2=proj([-g,u,z0],F.s,F.cx,F.cy), b2=proj([g,u,z0],F.s,F.cx,F.cy);
+      ctx.moveTo(a1[0],a1[1]); ctx.lineTo(b1[0],b1[1]);
+      ctx.moveTo(a2[0],a2[1]); ctx.lineTo(b2[0],b2[1]);
+    }
+    ctx.stroke(); ctx.globalAlpha = 1;
+
+    /* bones, undriven first so cyan sits on top */
+    ctx.lineCap = "round";
+    [false, true].forEach(function(on){
+      ctx.strokeStyle = on ? COL.driven : COL.bone;
+      ctx.lineWidth  = on ? 2.6 : 1.5;
+      ctx.globalAlpha = on ? 1 : .72;
+      ctx.beginPath();
+      for(var name in r.links){
+        if((name in r.driven_links) !== on) continue;
+        var m = T[name]; if(!m) continue;
+        var segs = r.links[name];
+        for(var i=0;i<segs.length;i++){
+          var a = P(xform(m, segs[i][0])), b = P(xform(m, segs[i][1]));
+          ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]);
+        }
+      }
+      ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+
+    /* joint markers */
+    for(var name2 in r.links){
+      var m2 = T[name2]; if(!m2) continue;
+      var on2 = name2 in r.driven_links;
+      var q = P([m2[3], m2[7], m2[11]]);
+      ctx.fillStyle = on2 ? COL.driven : COL.bone;
+      ctx.beginPath(); ctx.arc(q[0], q[1], on2 ? 2.7 : 1.9, 0, 6.2832); ctx.fill();
+    }
+
+    /* rotors, for the one robot with no joints at all */
+    if(r.wing && r.rotors && r.rotors.length){
+      var spin = 2*Math.PI*frame/9 * (1 + 4*r.wing.thrust);
+      ctx.strokeStyle = COL.hot; ctx.lineWidth = 2; ctx.beginPath();
+      r.rotors.forEach(function(rot){
+        var m3 = T[rot.link]; if(!m3) return;
+        var c = xform(m3, rot.c);
+        for(var k=0;k<=16;k++){
+          var a = spin + 2*Math.PI*k/16;
+          var off = xform([m3[0],m3[1],m3[2],0,m3[4],m3[5],m3[6],0,m3[8],m3[9],m3[10],0],
+                          [rot.r*Math.cos(a), rot.r*Math.sin(a), 0]);
+          var p = P([c[0]+off[0], c[1]+off[1], c[2]+off[2]]);
+          if(k===0) ctx.moveTo(p[0],p[1]); else ctx.lineTo(p[0],p[1]);
+        }
+      });
+      ctx.stroke();
+    }
+  }
+
+  /* ---------- panels ---------- */
+  var grid = document.getElementById("grid");
+  D.robots.forEach(function(r, i){
+    var b = document.createElement("button");
+    b.className = "bot"; b.type = "button";
+    b.setAttribute("aria-expanded","false");
+    var driven = Object.keys(r.commands).length;
+    var badge = r.wing ? '<span class="badge wing">wing pool</span>'
+      : (r.roles_uncertain ? '<span class="badge warn">roles inferred</span>'
+                           : '<span class="badge">'+esc(r.gait)+'</span>');
+    b.innerHTML =
+      '<div class="bot-head"><div><h3>'+esc(r.title)+'</h3>'+
+        '<div class="kind">'+esc(r.kind)+'</div></div>'+badge+'</div>'+
+      '<canvas id="cv-'+r.key+'" aria-label="'+esc(r.title)+' kinematic playback"></canvas>'+
+      '<div class="bot-foot"><span class="n">'+driven+'/'+r.n_joints+' driven</span>'+
+        '<span class="meter"><i style="width:'+
+          (r.n_joints ? Math.round(100*driven/r.n_joints) : 0)+'%"></i></span>'+
+        '<span class="n">'+r.control_hz+' Hz</span></div>';
+    b.addEventListener("click", function(){ select(i); });
+    grid.appendChild(b);
+    r._btn = b;
+    r._cv = b.querySelector("canvas");
+    r._ctx = r._cv.getContext("2d");
+  });
+
+  /* ---------- detail ---------- */
+  var detail = document.getElementById("detail"), current = -1;
+  function select(i){
+    if(current === i){ detail.hidden = true; D.robots[i]._btn.setAttribute("aria-expanded","false"); current = -1; return; }
+    D.robots.forEach(function(r){ r._btn.setAttribute("aria-expanded","false"); });
+    var r = D.robots[i]; current = i;
+    r._btn.setAttribute("aria-expanded","true");
+
+    var rows = Object.keys(r.commands).map(function(j){
+      var c = r.commands[j], w = Math.round(Math.abs(c.command)*380);
+      return '<tr><td>'+esc(j)+'</td><td class="role">'+esc(c.role)+'</td>'+
+        '<td>'+esc(c.fly)+'</td><td>'+c.agonist+' / '+c.antagonist+'</td>'+
+        '<td>'+(c.command>=0?"+":"")+c.command.toFixed(4)+
+        ' <span class="bar'+(c.command<0?" neg":"")+'" style="width:'+Math.max(w,1)+'px"></span></td></tr>';
+    }).join("");
+
+    var wingBlock = "";
+    if(r.wing){
+      wingBlock = '<h4 style="margin-top:18px">Wing pools &rarr; rotors</h4><pre>'+
+        'power   L '+r.wing.power_L.toFixed(5)+'   R '+r.wing.power_R.toFixed(5)+'\n'+
+        'steering L '+r.wing.steer_L.toFixed(5)+'   R '+r.wing.steer_R.toFixed(5)+'\n'+
+        'thrust  = mean(power)          '+r.wing.thrust.toFixed(5)+'\n'+
+        'roll    = steer(R) - steer(L)  '+r.wing.roll.toFixed(5)+'</pre>';
+    }
+
+    detail.innerHTML =
+      '<div class="detail-top"><div><h3>'+esc(r.title)+'</h3>'+
+        '<div class="src">'+esc(r.kind)+' &middot; URDF from <a href="'+esc(r.url)+
+        '" target="_blank" rel="noopener">'+esc(r.repo)+'</a> &middot; base link <code>'+
+        esc(r.base_link)+'</code> &middot; '+r.n_actuated_in_limbs+' of '+r.n_actuated+
+        ' actuated joints bound, from '+r.n_joints_total+' in the file</div></div>'+
+        '<button type="button" id="closed">Close</button></div>'+
+      '<p class="detail-note">'+esc(r.note)+
+        (r.roles_uncertain ? ' <b>Role confidence:</b> '+esc(r.role_confidence)+'.' : '')+'</p>'+
+      '<div class="detail-cols">'+
+        '<div class="col"><h4>API calls for this robot</h4><div class="pipe">'+
+          callRows(r.api)+'</div>'+wingBlock+'</div>'+
+        '<div class="col"><h4>Binding</h4><pre>'+esc(r.plan_summary)+
+          (r.plan_note ? "\n\n"+esc(r.plan_note) : "")+'</pre>'+
+          (rows ? '<h4 style="margin-top:18px">Joints the fly drives</h4><div class="tablewrap"><table>'+
+            '<thead><tr><th>joint</th><th>role</th><th>fly leg</th><th>ag / an</th>'+
+            '<th>rate diff</th></tr></thead><tbody>'+rows+'</tbody></table></div>' : "")+
+        '</div></div>';
+    detail.hidden = false;
+    document.getElementById("closed").addEventListener("click", function(e){
+      e.stopPropagation(); select(i);
+    });
+    detail.scrollIntoView({behavior:"smooth", block:"nearest"});
+  }
+
+  /* ---------- gif gallery ---------- */
+  document.getElementById("gifs").innerHTML = D.robots.map(function(r){
+    return '<figure class="gif"><img src="'+r.key+'.gif" alt="'+esc(r.title)+
+      ' walking loop" loading="lazy" width="460" height="360">'+
+      '<figcaption><b>'+esc(r.title)+'</b><br>'+Object.keys(r.commands).length+
+      ' of '+r.n_joints+' joints driven &middot; gait '+esc(r.gait)+'</figcaption></figure>';
+  }).join("");
+
+  document.getElementById("foot").innerHTML =
+    'Generated '+esc(D.generated)+' by <code>demos/formfactors.py</code> from '+esc(D.dataset)+
+    '. Circuit <code>'+esc(D.circuit)+'</code>, pruned at p(real)='+D.p_real+', quantised to '+
+    D.bits+' bits, ticked '+D.warmup_ticks.toLocaleString()+' times at '+D.tick_dt_ms+
+    ' ms with a tonic Q8.8 drive of '+D.drive_q88+'. Each robot also has a complete ament_python '+
+    'ROS 2 package emitted under <code>artifacts/formfactors/ros2/</code>.';
+
+  /* ---------- transport ---------- */
+  var scrub = document.getElementById("scrub"), tickEl = document.getElementById("tick"),
+      playBtn = document.getElementById("play"), cam = document.getElementById("cam"),
+      camv = document.getElementById("camv");
+  scrub.max = NF - 1;
+
+  playBtn.addEventListener("click", function(){
+    playing = !playing;
+    playBtn.textContent = playing ? "Pause" : "Play";
+    playBtn.setAttribute("aria-pressed", playing ? "true" : "false");
+  });
+  scrub.addEventListener("input", function(){
+    playing = false; playBtn.textContent = "Play"; playBtn.setAttribute("aria-pressed","false");
+    frame = +scrub.value; render();
+  });
+  cam.addEventListener("input", function(){
+    az = (+cam.value) * Math.PI/180;
+    camv.textContent = cam.value + "°";
+    render();
+  });
+
+  var themeBtn = document.getElementById("theme");
+  themeBtn.textContent =
+    window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "Light" : "Dark";
+  themeBtn.addEventListener("click", function(){
+    var cur = document.documentElement.getAttribute("data-theme");
+    var next = cur === "light" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", next);
+    themeBtn.textContent = next === "light" ? "Dark" : "Light";
+    readTokens(); render();
+  });
+
+  function render(){
+    D.robots.forEach(draw);
+    tickEl.textContent = String(frame+1).padStart(2,"0") + " / " + NF;
+    scrub.value = frame;
+  }
+
+  var last = 0, MS = 1000 / (D.fps || 30);
+  function loop(t){
+    if(playing && t - last >= MS){
+      last = t; frame = (frame + 1) % NF; render();
+    }
+    requestAnimationFrame(loop);
+  }
+  render();
+  requestAnimationFrame(loop);
+  window.addEventListener("resize", render);
+})();
+</script>

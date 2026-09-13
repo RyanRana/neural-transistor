@@ -9,3 +9,4 @@ out/
 *.elf
 *.map
 *.bin
+.aider*
