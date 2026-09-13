@@ -28,7 +28,8 @@ from typing import Optional
 
 import numpy as np
 
-from neuraltransistor.morph.spec import MorphologySpec, MotorDecode
+from neuraltransistor.morph.spec import (MorphologySpec, MotorDecode,
+                                         name_tokens)
 
 #: gait name -> {limb name: phase in [0,1)}
 GAITS = {
@@ -79,22 +80,29 @@ def infer_sources(morph) -> dict:
     if table and all(l.name in table for l in morph.limbs):
         return dict(table)
 
-    FRONT = ("front", "fore", "_f", "f_", "fl", "fr", "1")
-    HIND = ("hind", "rear", "back", "_h", "h_", "hl", "hr", "3")
-    MID = ("mid", "middle", "_m", "m_", "ml", "mr", "2")
-    LEFT = ("left", "_l", "l_", "fl", "hl", "ml")
-    RIGHT = ("right", "_r", "r_", "fr", "hr", "mr")
+    FRONT = {"front", "fore", "f", "fl", "fr", "lf", "rf", "1"}
+    MID = {"mid", "middle", "centre", "center", "m", "ml", "mr", "lm", "rm", "2"}
+    HIND = {"hind", "rear", "back", "h", "hl", "hr", "lh", "rh", "rr", "rl", "lr", "3"}
 
-    def tok(name, keys):
-        n = name.lower()
-        return any(k in n for k in keys)
+    def seg_of(limb):
+        """Which fly segment a limb's own name says it is.
+
+        Matched as whole tokens over the limb name *and* its joint names, because the
+        segment is often only in the joints: a racecar's front limb is named
+        ``left_steering_hinge`` and says "front" nowhere but in
+        ``left_front_wheel_joint``. Two-letter codes are segment+side in either order,
+        so ``rf`` and ``fr`` both mean front.
+        """
+        toks = set(name_tokens(limb.name, *limb.joints))
+        for keys, seg in ((FRONT, "front"), (HIND, "hind"), (MID, "middle")):
+            if toks & keys:
+                return seg
+        return None
 
     out, named = {}, True
     for limb in morph.limbs:
-        n = limb.name.lower()
-        seg = "front" if tok(n, FRONT) else ("hind" if tok(n, HIND) else
-                                             ("middle" if tok(n, MID) else None))
-        side = limb.side or ("L" if tok(n, LEFT) else ("R" if tok(n, RIGHT) else None))
+        seg = seg_of(limb)
+        side = limb.side or _infer_side_tokens(limb)
         if seg is None or side is None:
             named = False
             break
@@ -113,12 +121,42 @@ def infer_sources(morph) -> dict:
     return out
 
 
-def infer_phases(morph, gait: Optional[str]) -> tuple:
-    """Gait phases for a morphology whose limb names we did not choose."""
+def _infer_side_tokens(limb):
+    """Side from the limb's own names, when the importer did not already set one."""
+    from neuraltransistor.morph.urdf import _infer_side
+    return _infer_side(limb.name + " " + " ".join(limb.joints)) or None
+
+
+#: canonical gait-table slot for a limb, from the fly segment and side it resolved to
+_SLOT = {
+    6: lambda seg, side: f"{side}{ {'front': 1, 'middle': 2, 'hind': 3}[seg] }",
+    4: lambda seg, side: f"{'F' if seg == 'front' else 'H'}{side}",
+    2: lambda seg, side: side,
+}
+
+
+def infer_phases(morph, gait: Optional[str], sources: Optional[dict] = None) -> tuple:
+    """Gait phases for a morphology whose limb names we did not choose.
+
+    Given ``sources`` -- which fly leg each limb resolved to -- the published gait table
+    is read through that mapping rather than through limb order. Order is not safe to
+    assume: the builtin hexapod lists its legs ``L1 R1 L2 R2 L3 R3`` and PhantomX lists
+    all three right legs and then all three left ones, so assigning ``[0, .5, .5, 0, 0,
+    .5]`` positionally puts both front legs in the same tripod group. That is not a
+    tripod, and it is the kind of wrong that looks fine until the robot falls over.
+    """
     if gait and gait in GAITS:
         table = GAITS[gait]
         if all(l.name in table for l in morph.limbs):
             return table, gait
+        slot = _SLOT.get(len(morph.limbs))
+        if slot and sources and all(l.name in sources for l in morph.limbs):
+            try:
+                keyed = {l.name: table[slot(*sources[l.name])] for l in morph.limbs}
+            except KeyError:
+                keyed = None
+            if keyed is not None:
+                return keyed, gait
     n = len(morph.limbs)
     if n == 6:
         base, name = [0.0, .5, .5, 0.0, 0.0, .5], gait or "tripod"
@@ -178,8 +216,8 @@ def retarget(morph: MorphologySpec, decodes: list[MotorDecode],
     else:
         if gait and gait not in GAITS and morph.name in SOURCE_PREFERENCE:
             raise KeyError(f"unknown gait {gait!r}; have {sorted(GAITS)}")
-        phases, gait = infer_phases(morph, gait)
         pref = infer_sources(morph)
+        phases, gait = infer_phases(morph, gait, pref)
 
     by_src: dict = {}
     for d in decodes:

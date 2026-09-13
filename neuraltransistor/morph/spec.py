@@ -47,6 +47,27 @@ MUSCLE_MAP = {
               r"Ta depressor|ltm"),
 }
 
+#: Words that appear in every URDF and carry no side or segment information. Without
+#: this list, substring matching reads "_link" as left and "rear" as right.
+GENERIC_TOKENS = {"link", "joint", "motor", "leg", "limb", "base", "body", "wheel",
+                  "hip", "knee", "shoulder", "elbow", "ankle", "foot", "arm", "axis"}
+
+
+def name_tokens(*parts: str) -> list:
+    """Split URDF names into comparable tokens.
+
+    Side and segment are inferred from names their authors chose, and doing that with
+    ``"_l" in name`` is how ``front_left_wheel_link`` and ``motor_front_rightR_link``
+    both come back left: the substring is in the word "link". So split on separators and
+    camelCase humps, lowercase, and drop the words every robot has. Digits stay glued to
+    their letters -- ``c1`` must not become the token ``1``, or a PhantomX leg named
+    ``c1_rr`` reads as leg 1 and every leg lands on the fly's front segment.
+    """
+    t = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", " ".join(parts))
+    return [w for w in re.split(r"[^A-Za-z0-9]+", t.lower())
+            if w and w not in GENERIC_TOKENS]
+
+
 #: VNC subclass code -> which leg the motor neuron belongs to
 LEG_SUBCLASS = {"fl": "front", "ml": "middle", "hl": "hind"}
 
