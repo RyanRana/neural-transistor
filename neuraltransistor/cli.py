@@ -118,7 +118,7 @@ def cmd_emit(args):
         try:
             from neuraltransistor.morph import retarget as _R, spec as _M
             conn = _conn(args)
-            legs = from_library(conn, "legs_all")
+            legs = from_library(conn, "legs")
             plan = _R.retarget(morph, _M.decode_motor(legs, conn.neurons), gait=args.gait)
         except Exception as e:
             print(f"  (no motor retarget: {type(e).__name__}: {e})")
@@ -133,7 +133,7 @@ def cmd_morph(args):
     from neuraltransistor.circuit.extract import from_library
     from neuraltransistor.morph import spec as M, retarget as R, urdf
     c = _conn(args)
-    ir = from_library(c, "legs_all")
+    ir = from_library(c, "legs")
     d = M.decode_motor(ir, c.neurons)
     if args.urdf:
         morph, rep = urdf.parse(args.urdf)
@@ -345,7 +345,7 @@ def cmd_demo(args):
     print("  gf-sweep.png")
     from neuraltransistor.morph import retarget as _R, spec as _M
     from neuraltransistor.recipe import build_all
-    legs = from_library(conn, "legs_all"); dec = _M.decode_motor(legs, conn.neurons)
+    legs = from_library(conn, "legs"); dec = _M.decode_motor(legs, conn.neurons)
     with viz.style() as _p:
         f2, axes = _p.subplots(1, 3, figsize=(12.6, 4.8))
     for ax, (nm, g) in zip(axes, [("hexapod", "tripod"), ("quadruped", "trot"),
@@ -356,6 +356,76 @@ def cmd_demo(args):
     viz.recipes(build_all(conn, "out", emit=False, verbose=False)).savefig(
         f"{out}/recipes.png", bbox_inches="tight")
     print("  recipes.png")
+
+
+def cmd_fit(args):
+    """Fit the dynamics the connectome does not contain."""
+    from neuraltransistor.circuit.extract import from_library
+    from neuraltransistor.train import RingAttractorTask, fit
+
+    conn = _conn(args)
+    ir = from_library(conn, args.circuit)
+    print(f"{ir.name}: {ir.n_neurons:,} neurons / {ir.n_edges:,} edges")
+
+    task = RingAttractorTask.for_circuit(ir, conn.with_columns("instance"))
+    print(f"  ring: {len(task.ring_idx)} neurons at "
+          f"{len(set(task.ring_theta.round(6)))} positions")
+    res = fit(ir, task, steps=args.steps, lr=args.lr, device=args.device,
+              curriculum=tuple(args.curriculum) if args.curriculum else None,
+              verbose=True, log_every=max(args.steps // 12, 1))
+    m = res.best_metrics
+    print()
+    print(f"  R while driven  {m.get('R_driven', 0):.3f}")
+    print(f"  R once released {m.get('R_held', 0):.3f}   (target {task.target_R})")
+    print(f"  drift           {m.get('drift_rad', 0):.3f} rad over the hold")
+    print(f"  rate            {m.get('hz_drive', 0):.0f} Hz driven / "
+          f"{m.get('hz_hold', 0):.0f} Hz held")
+    if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(json.dumps(
+            {"circuit": ir.name, "steps": res.steps, "seconds": res.seconds,
+             "best_loss": res.best_loss, "metrics": m,
+             "curve": res.curve()}, indent=1))
+        print(f"  wrote {args.out}")
+    return res
+
+
+def cmd_firmware(args):
+    """Cross-build a bootable firmware image around an emitted circuit."""
+    from neuraltransistor.circuit.extract import from_library
+    from neuraltransistor.ir.graph import CircuitIR
+    from neuraltransistor.quant.quantize import prune_by_reliability
+    from neuraltransistor.target.devices import DEVICES
+    from neuraltransistor.target.firmware import emit_firmware, energy_estimate
+
+    ir = (CircuitIR.load(args.circuit) if str(args.circuit).endswith(".fcx")
+          else from_library(_conn(args), args.circuit))
+    if args.p_real:
+        ir, _ = prune_by_reliability(ir, args.p_real)
+    rep = emit_firmware(ir, args.out, device=args.device, machine=args.machine,
+                        ticks=args.ticks, build=not args.no_build)
+
+    print(f"{ir.name}: {ir.n_neurons:,} neurons / {ir.n_edges:,} edges")
+    print(f"  wrote {len(rep.files) + 3} files into {args.out}/")
+    print(f"  expected digest  DIGEST {rep.expect}   ({rep.ticks} ticks vs the numpy reference)")
+    if rep.built:
+        print(f"  linked           .text {rep.text_b:,}  .data {rep.data_b:,}  "
+              f".bss {rep.bss_b:,}")
+        print(f"  flash {rep.flash_b / 1024:.1f} KB   ram {rep.ram_b / 1024:.1f} KB"
+              "   (measured by the linker, not estimated)")
+        if args.device and args.device in DEVICES:
+            d = DEVICES[args.device]
+            ok = rep.flash_b <= d.flash_b and rep.ram_b <= d.sram_b
+            print(f"  {args.device}: {'fits' if ok else 'DOES NOT FIT'} "
+                  f"({d.flash_kb} KB flash / {d.sram_kb} KB sram)")
+            if args.volts:
+                e = energy_estimate(args.device, args.hz, voltage=args.volts)
+                print(f"  energy at {args.volts} V: {e['active_mw_at_voltage']} mW active "
+                      f"-- DERIVED from {e['basis']}, not measured")
+    else:
+        print(f"  not built: {rep.build_error.splitlines()[-1] if rep.build_error else '?'}")
+        print("  (install arm-none-eabi-gcc, or run cilicon.yml in CI)")
+    return rep
 
 
 def cmd_ui(args):
@@ -421,8 +491,31 @@ def main(argv=None):
 
     ev = sub.add_parser("eval", help="run the eval suite")
     ev.add_argument("--circuits", nargs="+",
-                    default=["gate_readout", "compass", "descending"])
+                    default=["valence", "compass", "commands"])
     ev.add_argument("-o", "--out"); ev.set_defaults(fn=cmd_eval)
+
+    ft = sub.add_parser("fit", help="fit the dynamics the connectome does not contain")
+    ft.add_argument("circuit", nargs="?", default="compass")
+    ft.add_argument("--steps", type=int, default=600)
+    ft.add_argument("--lr", type=float, default=0.02)
+    ft.add_argument("--device", default=None)
+    ft.add_argument("--curriculum", type=int, nargs="*", default=[20, 45, 90, 180],
+                    help="hold_ticks per stage; empty for a single stage")
+    ft.add_argument("-o", "--out", default=None)
+    ft.set_defaults(fn=cmd_fit)
+
+    fw = sub.add_parser("firmware", help="cross-build a bootable image (arm-none-eabi + QEMU)")
+    fw.add_argument("circuit", nargs="?", default="compass")
+    fw.add_argument("-o", "--out", default="out/firmware")
+    fw.add_argument("--device", default=None, help="gate size against this part")
+    fw.add_argument("--machine", default=None, help="emulated core to link and boot for")
+    fw.add_argument("--ticks", type=int, default=64)
+    fw.add_argument("--p-real", type=float, default=None)
+    fw.add_argument("--volts", type=float, default=None,
+                    help="derived energy estimate at this rail (not a measurement)")
+    fw.add_argument("--hz", type=float, default=200.0)
+    fw.add_argument("--no-build", action="store_true")
+    fw.set_defaults(fn=cmd_firmware)
 
     u = sub.add_parser("ui", help="serve the local UI")
     u.add_argument("--port", type=int, default=8765)

@@ -1,19 +1,24 @@
 """neuraltransistor -- compile fly connectome circuits into quantized robot controllers.
 
-    import neuraltransistor as ff
+    import neuraltransistor as nt
 
-    conn = ff.load()                            # cached CSR index over male-CNS v1.0
-    ir   = ff.circuit(conn, "compass")          # 452 neurons, 54,290 edges
-    ir, _ = ff.prune(ir, p_real=0.95)           # keep edges 95% likely to be real
-    ir, rep = ff.quantize(ir, bits=8)           # log codebook + delta index
-    ff.emit_c(ir, "out/")                       # freestanding C for any MCU
+    conn = nt.load()                      # cached CSR index over male-CNS v1.0
+    ir   = nt.circuit(conn, "compass")    # 452 neurons, 54,290 edges
+    ir, _   = nt.prune(ir, p_real=0.95)   # keep edges 95% likely to be real
+    ir, rep = nt.quantize(ir, bits=8)     # log codebook + delta index
+    nt.emit(ir, "out/")                   # freestanding C for any MCU
 
 Everything is measured rather than estimated: `rep` carries the drive error, the
 correlation and the sign agreement that compression actually cost.
+
+Circuits are named for what they do -- `compass`, `collision`, `legs`, `commands` --
+and `nt.circuits()` lists them. The anatomical names this library used first
+(`legs_all`, `gate_readout`, `optic_motion`, ...) still resolve.
 """
 
 from neuraltransistor.circuit import noise
-from neuraltransistor.circuit.extract import LIBRARY, extract, from_library
+from neuraltransistor.circuit.extract import (ALIASES, LIBRARY, extract,
+                                              from_library, resolve)
 from neuraltransistor.circuit.select import Sel, Selector
 from neuraltransistor.circuit.sign import assign_signs
 from neuraltransistor.data.source import Connectome
@@ -28,12 +33,18 @@ from neuraltransistor.target.mcu_int8 import emit_c
 __version__ = "0.1.0"
 
 __all__ = [
-    "load", "circuit", "prune", "quantize", "budget", "emit_c", "emit_ros2",
-    "morphology", "retarget", "retina", "evaluate",
-    "Connectome", "CircuitIR", "Dynamics", "Port", "Reference",
-    "Sel", "Selector", "LIBRARY", "extract", "from_library", "assign_signs",
+    # the short path
+    "load", "circuits", "circuit", "prune", "quantize", "budget", "emit",
+    "morphology", "retarget", "sensor", "evaluate", "fit",
+    # emit targets, by name
+    "emit_c", "emit_ros2",
+    # types
+    "Connectome", "CircuitIR", "Dynamics", "Port", "Reference", "Sel", "Selector",
+    # the rest
+    "LIBRARY", "ALIASES", "resolve", "extract", "from_library", "assign_signs",
     "compress", "fit_budget", "prune_by_reliability", "prune_weights",
     "input_drive", "total_drive", "noise", "DEVICES", "Device", "fit_report",
+    "retina",
 ]
 
 
@@ -42,6 +53,11 @@ __all__ = [
 def load(rebuild: bool = False, verbose: bool = False) -> Connectome:
     """The connectome, from cache. First call builds the index (~75 s)."""
     return Connectome.load(rebuild=rebuild, verbose=verbose)
+
+
+def circuits() -> dict:
+    """Every circuit in the library: ``{name: what it does}``."""
+    return {k: v.get("does", v.get("role", "")) for k, v in sorted(LIBRARY.items())}
 
 
 def circuit(conn: Connectome, which, **kw) -> CircuitIR:
@@ -79,6 +95,31 @@ def budget(ir: CircuitIR, kb: float, max_drive_err: float = 0.10):
     return fit_budget(ir, kb, max_drive_err=max_drive_err)
 
 
+def emit(ir: CircuitIR, outdir: str, target: str = "c", **kw):
+    """Compile ``ir`` to ``outdir``.
+
+        nt.emit(ir, "out/")                                  # freestanding C99
+        nt.emit(ir, "out/", target="ros2", morph=my_morph)   # a ROS 2 package
+
+    One entry point with a ``target``, matching ``ntx emit --target``, rather than one
+    function per backend.
+    """
+    if target in ("c", "mcu", "int8"):
+        return emit_c(ir, outdir, **kw)
+    if target == "ros2":
+        morph = kw.pop("morph", None) or kw.pop("morphology", None)
+        if morph is None:
+            raise TypeError("target='ros2' needs morph= (see nt.morphology)")
+        return emit_ros2(ir, morph, outdir, **kw)
+    raise ValueError(f"unknown target {target!r}; have 'c' and 'ros2'")
+
+
+def fit(ir: CircuitIR, task, **kw):
+    """Fit the dynamics the connectome does not contain. See neuraltransistor.train."""
+    from neuraltransistor.train import fit as _f
+    return _f(ir, task, **kw)
+
+
 def emit_ros2(ir: CircuitIR, morph, outdir: str,
               package: str = "neuraltransistor_controller", retarget_plan=None):
     from neuraltransistor.target.ros2 import emit_ros2 as _e
@@ -97,7 +138,7 @@ def morphology(name: str = None, urdf: str = None, **kw):
     return _m.BUILTIN[name or "hexapod"](**kw)
 
 
-def retarget(conn: Connectome, morph, gait: str = None, circuit_name: str = "legs_all"):
+def retarget(conn: Connectome, morph, gait: str = None, circuit_name: str = "legs"):
     """Bind a robot's limbs to fly leg circuits and a gait phase."""
     from neuraltransistor.morph import retarget as _r, spec as _m
     ir = from_library(conn, circuit_name)
@@ -105,13 +146,21 @@ def retarget(conn: Connectome, morph, gait: str = None, circuit_name: str = "leg
     return _r.retarget(morph, decodes, gait=gait)
 
 
-def retina(n: int = 886, **kw):
-    """A hexagonal ommatidial lattice matching the fly eye."""
+def sensor(n: int = 886, **kw):
+    """A hexagonal ommatidial lattice matching the fly eye.
+
+    ``n`` is the ommatidia count; the fly has ~886 per eye. Pair with
+    ``neuraltransistor.sensors.retina.build_resampler`` to map a camera frame onto it.
+    """
     from neuraltransistor.sensors.retina import hex_lattice
     return hex_lattice(n_target=n, **kw)
 
 
-def evaluate(conn: Connectome, circuits=("gate_readout", "compass", "descending"),
+#: Previous name for :func:`sensor`.
+retina = sensor
+
+
+def evaluate(conn: Connectome, circuits=("valence", "compass", "commands"),
              verbose: bool = True):
     """Run the eval suite."""
     from neuraltransistor.evals import suite

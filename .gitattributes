@@ -1,0 +1,6 @@
+# The circuit sources under firmware/ are emitted by neuraltransistor, not written.
+# Marking them generated keeps a 135 KB weight table out of the language statistics and
+# collapses it in diffs, where a line-by-line view of quantized synapse codes is noise.
+firmware/**/*.c   linguist-generated=true
+firmware/**/*.h   linguist-generated=true
+firmware/**/*.map linguist-generated=true

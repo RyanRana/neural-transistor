@@ -37,3 +37,18 @@ running log of things that turned out to be true. one line each.
 - shiu's 0.275 mV synaptic scale is right for their units and puts you 100x over threshold on raw synapse counts, init from 1/median total input instead and you land at 8% firing which is about what a fly does
 - \b in a regex doesn't match across an underscore so flyforge_controller survived the rename, classic
 - urdf limbs are called FL_coxa not FL so the retargeter bound zero joints, had to infer front/hind/left/right from the name with a positional fallback, now 12/12
+- the compass ring attractor is actually in the connectome and you can see it without fitting anything: EPG->PEG->EPG peaks at delta-theta +10 deg (658 vs ~120 elsewhere) and EPG->Delta7->EPG is inhibitory everywhere except near zero, so the net two-hop kernel is positive only at +10 deg and negative at every other angle, a textbook mexican hat
+- so "connectivity is not dynamics" was never a claim about the wiring lacking the structure, the structure is right there, it is the biophysics that was missing
+- ER is 282 of the compass's 452 neurons and puts 124k inhibitory synapses onto EPG against Delta7's 4.3k, so one shared inhibitory scale has to choose between killing the bump and deleting its surround, per-presynaptic-type scales are the minimum that can express the difference
+- the torch backend had no refractory period while the emitted c forces 4 ticks, so fitting could buy persistence with duty cycles of 1.0 against a c ceiling of 0.2, i got r_held 0.614 that way and it was not real
+- a fitted solution that cannot be emitted is not a fitted solution, the trainable model has to be the deployed model
+- target_activity 0.10 was commented "flies run near 10% active" but the loss measures per-neuron duty cycle, and 0.10 duty at dt 0.5ms is 200hz against a refractory ceiling of 0.2, so the rate target was sitting at half of saturation
+- the anti-silence term was relu(0.3*target - rate)^2 in squared rate units, max 9e-4, against a persistence term of 0.42, about 470x too weak to prevent the collapse it existed to prevent
+- drift was being computed on a dead ring where the preferred angle is undefined, and that noise was the single largest loss term at 1.10 of 2.39 while held activity was exactly zero
+- penalise saturation per cell type not per neuron, ER pinned at the ceiling and the neuron-mean stayed near zero because most ER cells were quiet
+- squared relative error on a rate blows up when you start 8x over target, 56 on its own, use a log ratio
+- scoring the mean rate of the whole compass is scoring nothing anyone measured, 282 of 452 are ER carrying visual input the isolated circuit does not have, score the ring
+- the emitted "freestanding" runtime included <string.h> for three memsets, which is free on a hosted build and fails to compile against a bare-metal toolchain with no newlib, ie the exact configuration the code exists for, open-code the fills
+- arm semihosting writes to stderr not stdout, cost me a round of MISMATCH on six circuits that were all actually fine
+- the compass ram estimate was 4.0kb and the linker says 4.9kb, the estimate was exactly right about the kernel (2260 state + 1808 acc = 4068) and omitted the 904 byte input buffer the CALLER supplies, which is 18% of the total
+- boot proof should check what the firmware COMPUTED not that it booted, fold the spikes into an fnv digest and derive the expected value from the numpy reference at emit time, then "it boots" and "it is bit-exact on arm" are the same green check

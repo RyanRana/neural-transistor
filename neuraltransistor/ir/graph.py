@@ -42,6 +42,11 @@ from typing import Optional
 import numpy as np
 
 FCX_MAGIC = "neuraltransistor-circuit"
+#: Magic written before the project was renamed. A .fcx on someone's disk is still a
+#: valid circuit, so it keeps loading; only the message changed. Reported against the
+#: old name the error said "is not a neuraltransistor circuit", which is true and also
+#: exactly the wrong thing to tell someone whose file is fine.
+FCX_LEGACY_MAGIC = ("flyforge-circuit",)
 FCX_VERSION = 1
 
 
@@ -237,8 +242,11 @@ class CircuitIR:
         path = Path(path)
         with zipfile.ZipFile(path) as z:
             man = json.loads(z.read("manifest.json"))
-            if man.get("magic") != FCX_MAGIC:
-                raise ValueError(f"{path} is not a neuraltransistor circuit")
+            magic = man.get("magic")
+            if magic not in (FCX_MAGIC, *FCX_LEGACY_MAGIC):
+                raise ValueError(
+                    f"{path} is not a neuraltransistor circuit "
+                    f"(magic {magic!r}, expected {FCX_MAGIC!r})")
 
             def arr(k):
                 return np.load(io.BytesIO(z.read(f"arrays/{k}.npy")))

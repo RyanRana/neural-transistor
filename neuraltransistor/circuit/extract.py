@@ -232,7 +232,7 @@ LIBRARY = {
             "integration, Delta7 global inhibition, ER visual gating.",
         closure="none",
     ),
-    "path_integration": dict(
+    "odometry": dict(
         role="dead reckoning",
         does="Tracks where you are relative to where you started, from self-motion alone.",
         sel=Sel.type(r"^(EPG|PEN|PEG|Delta7|ER|PFN|hDelta|vDelta|FC2|PFL)"),
@@ -248,7 +248,7 @@ LIBRARY = {
             "navigation stack.",
         closure="efferent",
     ),
-    "optic_motion": dict(
+    "motion": dict(
         role="optical flow",
         does="Per-pixel motion direction from a camera. No training data.",
         sel=Sel.type(r"^(T4|T5|Mi1|Mi4|Mi9|Tm1|Tm2|Tm3|Tm4|Tm9|Tm20|C2|C3|L[1-5])"),
@@ -256,7 +256,7 @@ LIBRARY = {
             "input pathway.",
         closure="none",
     ),
-    "looming": dict(
+    "collision": dict(
         role="collision detector",
         does="Fires before you hit something. Scales correctly with approach speed.",
         sel=Sel.type(r"^(LPLC|LC[0-9]|LPi|GF)"),
@@ -264,7 +264,7 @@ LIBRARY = {
             "LPLC2 looming pathway.",
         closure="efferent",
     ),
-    "optic_flow": dict(
+    "flow": dict(
         role="self-motion estimator",
         does="Wide-field flow to ego-motion: are you translating or rotating.",
         sel=Sel.type(r"^(HS|VS|H[12]|CH|LPi|LPT)"),
@@ -272,7 +272,7 @@ LIBRARY = {
             "that act as matched filters for self-motion.",
         closure="afferent",
     ),
-    "leg_T1": dict(
+    "leg1": dict(
         role="single-leg controller",
         does="One leg: swing, stance, load and position reflexes.",
         sel=Sel.neuromere("T1") & (Sel.superclass("vnc_intrinsic") | Sel.motor()
@@ -281,7 +281,7 @@ LIBRARY = {
             "leg proprioceptors of the prothoracic neuromere.",
         closure="none",
     ),
-    "leg_T2": dict(
+    "leg2": dict(
         role="single-leg controller",
         does="One leg, middle-segment variant.",
         sel=Sel.neuromere("T2") & (Sel.superclass("vnc_intrinsic") | Sel.motor()
@@ -289,7 +289,7 @@ LIBRARY = {
         doc="One middle-leg local circuit.",
         closure="none",
     ),
-    "leg_T3": dict(
+    "leg3": dict(
         role="single-leg controller",
         does="One leg, rear-segment variant. The propulsive one.",
         sel=Sel.neuromere("T3") & (Sel.superclass("vnc_intrinsic") | Sel.motor()
@@ -297,7 +297,7 @@ LIBRARY = {
         doc="One hind-leg local circuit.",
         closure="none",
     ),
-    "legs_all": dict(
+    "legs": dict(
         role="gait controller",
         does="Six legs and the coupling that keeps them in phase.",
         sel=Sel.neuromere("T1", "T2", "T3") & (Sel.superclass("vnc_intrinsic")
@@ -306,7 +306,7 @@ LIBRARY = {
             "This is where inter-leg coordination actually lives.",
         closure="none",
     ),
-    "descending": dict(
+    "commands": dict(
         role="command bus",
         does="The entire brain-to-body channel: 1,314 command lines.",
         sel=Sel.descending(),
@@ -314,7 +314,7 @@ LIBRARY = {
             "command the brain issues passes through here.",
         closure="none",
     ),
-    "looming_pathway": dict(
+    "eye": dict(
         role="camera-to-brake pipeline",
         does="Raw camera frames to an escape command, end to end. The only circuit you can drive straight from a sensor.",
         sel=Sel.type(r"^(L[1-5]$|Tm1$|Tm2$|Tm4$|Tm9$|Tm20$|Tm5Y$|T5[a-d]$|T4[a-d]$"
@@ -337,7 +337,7 @@ LIBRARY = {
             "attention/valence mechanism.",
         closure="none",
     ),
-    "gate_readout": dict(
+    "valence": dict(
         role="valence readout",
         does="The gate without the memory. Kilobyte-scale attention.",
         sel=Sel.type(r"^(MBON|PAM|PPL1)"),
@@ -348,7 +348,30 @@ LIBRARY = {
 }
 
 
+#: Names this library used before the circuits were named after what they do rather
+#: than after the anatomy they came from. Kept resolving, permanently: a name that has
+#: been in someone's build script is part of the interface whether or not it is the one
+#: we would choose now.
+ALIASES = {
+    "path_integration": "odometry",
+    "optic_motion": "motion",
+    "optic_flow": "flow",
+    "looming": "collision",
+    "looming_pathway": "eye",
+    "legs_all": "legs",
+    "leg_T1": "leg1", "leg_T2": "leg2", "leg_T3": "leg3",
+    "descending": "commands",
+    "gate_readout": "valence",
+}
+
+
+def resolve(key: str) -> str:
+    """Canonical circuit name for ``key``, following aliases."""
+    return ALIASES.get(key, key)
+
+
 def from_library(conn: Connectome, key: str, **overrides) -> CircuitIR:
+    key = resolve(key)
     if key not in LIBRARY:
         raise KeyError(f"unknown circuit {key!r}; have {sorted(LIBRARY)}")
     spec = dict(LIBRARY[key])

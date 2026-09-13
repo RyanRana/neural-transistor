@@ -14,7 +14,17 @@ from neuraltransistor.quant.quantize import compress, input_drive, prune
 
 @pytest.fixture(scope="session")
 def conn():
-    return Connectome.load(verbose=False)
+    """The connectome, or a clean skip.
+
+    Most of this file asserts numbers that only exist once the 1.1 GB release is on
+    disk. Erroring when it is absent makes a machine without the data look like a
+    machine with a broken build, which is what it did in CI. Skipping says the true
+    thing: these assertions were not checked here.
+    """
+    try:
+        return Connectome.load(verbose=False)
+    except FileNotFoundError as e:
+        pytest.skip(f"connectome release not present: {e}")
 
 
 @pytest.fixture(scope="session")
@@ -114,7 +124,7 @@ def test_emitted_c_is_warning_clean(compass):
 
 
 def test_motor_decode_covers_all_six_legs(conn):
-    ir = from_library(conn, "legs_all")
+    ir = from_library(conn, "legs")
     d = M.decode_motor(ir, conn.neurons)
     assert {x.leg for x in d} >= {"front", "middle", "hind"}
     assert {x.joint for x in d} >= {"coxa_yaw", "trochanter", "knee"}
@@ -123,7 +133,7 @@ def test_motor_decode_covers_all_six_legs(conn):
 
 
 def test_retarget_reports_what_it_drops(conn):
-    ir = from_library(conn, "legs_all")
+    ir = from_library(conn, "legs")
     d = M.decode_motor(ir, conn.neurons)
     rt = R.retarget(M.biped(), d)
     assert len(rt.bindings) == 2

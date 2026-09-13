@@ -375,9 +375,57 @@ def eval_bump_forms(ir: CircuitIR, conn) -> EvalResult:
               f"does NOT persist (R_held={r['R_held']:.3f}) -- dynamics are unfitted"))
 
 
+def eval_cross_compiles_and_boots(ir: CircuitIR, ticks: int = 64) -> EvalResult:
+    """Cross-build for Cortex-M, boot it, and check WHAT IT COMPUTED.
+
+    ``eval_c_equivalence`` proves the kernel is bit-exact when built by the host
+    compiler for the host architecture. That is a different claim from being bit-exact
+    on the target, which is a different ISA, a different word order in places, and a
+    toolchain that ships no libc. This runs the real one.
+
+    Skipped, not failed, when the cross toolchain is absent -- the CI path that always
+    has it is ``cilicon.yml``.
+    """
+    from neuraltransistor.target.firmware import MACHINES, emit_firmware
+
+    cc = shutil.which("arm-none-eabi-gcc")
+    qemu = shutil.which("qemu-system-arm")
+    if cc is None or qemu is None:
+        missing = "arm-none-eabi-gcc" if cc is None else "qemu-system-arm"
+        return EvalResult("cross_boot", True, detail={"skipped": missing},
+                          note=f"skipped: no {missing} (cilicon.yml covers this in CI)")
+    with tempfile.TemporaryDirectory() as td:
+        rep = emit_firmware(ir, td, ticks=ticks, build=True)
+        if not rep.built:
+            return EvalResult("cross_boot", False,
+                              detail={"error": rep.build_error[-800:]},
+                              note="cross-compile failed")
+        m = MACHINES[rep.machine]
+        elf = Path(td) / f"{ir.name.replace('-', '_')}.elf"
+        try:
+            cp = subprocess.run(
+                [qemu, "-M", m.qemu_machine, "-nographic", "-semihosting",
+                 "-kernel", str(elf)],
+                capture_output=True, text=True, timeout=600)
+        except subprocess.TimeoutExpired:
+            return EvalResult("cross_boot", False, note="firmware did not terminate")
+        # ARM semihosting writes to stderr, not stdout.
+        console = (cp.stdout or "") + (cp.stderr or "")
+        ok = f"DIGEST {rep.expect}" in console
+        return EvalResult(
+            "cross_boot", ok,
+            detail={"machine": rep.machine, "core": m.mcpu, "expect": rep.expect,
+                    "text_b": rep.text_b, "bss_b": rep.bss_b,
+                    "console": console.strip()[-300:]},
+            note=(f"{m.mcpu} boots and computes the reference digest "
+                  f"({rep.flash_b / 1024:.1f} KB flash, {rep.ram_b / 1024:.1f} KB ram, "
+                  f"linker-measured)" if ok else
+                  f"booted but computed the wrong spikes (expected {rep.expect})"))
+
+
 # --------------------------------------------------------------------------- #
 
-def run_all(conn: Connectome, circuits=("gate_readout", "compass", "descending"),
+def run_all(conn: Connectome, circuits=("valence", "compass", "commands"),
             verbose: bool = True) -> dict:
     results: list[EvalResult] = []
     results.append(eval_nmj_guard(conn))
@@ -387,6 +435,7 @@ def run_all(conn: Connectome, circuits=("gate_readout", "compass", "descending")
     for key in circuits:
         ir = from_library(conn, key)
         rs = [eval_roundtrip(ir), eval_compiles(ir), eval_c_equivalence(ir),
+              eval_cross_compiles_and_boots(ir),
               eval_throughput(ir), eval_quant_fidelity(ir), eval_budget_fit(ir),
               eval_prune_tolerance(ir)]
         if ir.n_mod_edges:

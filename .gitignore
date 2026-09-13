@@ -4,3 +4,8 @@ __pycache__/
 *.egg-info/
 artifacts/
 .pytest_cache/
+.DS_Store
+out/
+*.elf
+*.map
+*.bin

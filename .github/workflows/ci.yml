@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e . pytest
+      # The connectome release is 1.1 GB and is not fetched here, so the tests that
+      # need the index skip rather than fail -- `-rs` prints which ones, so the gap is
+      # visible in the log instead of implied. The full suite runs locally via
+      # `pytest` + `ntx eval`.
+      - run: pytest -q -rs
+
+  # Cross-compile the emitted kernel for Cortex-M, boot it, and check the digest it
+  # computed against the one derived from the numpy reference. This needs no connectome
+  # data: the firmware sources under firmware/ are generated and committed, and the
+  # expected digest travels with them in cilicon.yml.
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi qemu-system-arm
+      - name: cross-build
+        run: make -C firmware/valence
+      - name: size against the target part
+        run: arm-none-eabi-size firmware/valence/valence.elf
+      - name: boot it and check what it computed
+        run: |
+          set -euo pipefail
+          expect=$(grep -o 'DIGEST [0-9a-f]\{16\}' cilicon.yml | head -1)
+          echo "expecting: $expect"
+          # ARM semihosting writes to stderr, so fold it into stdout before grepping.
+          # Semihosting SYS_EXIT makes qemu return non-zero, which `set -e` would
+          # treat as failure before the output is ever inspected. What the console
+          # printed is the check, not the exit status.
+          out=$(timeout 300 qemu-system-arm -M mps2-an385 -nographic \
+                  -semihosting-config enable=on,target=native \
+                  -kernel firmware/valence/valence.elf 2>&1 || true)
+          echo "$out"
+          grep -qF "$expect" <<<"$out"

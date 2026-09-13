@@ -163,7 +163,7 @@ the index cost outright. Compass: 188 KB → 73.6 KB at **0.000%** drive error.
 
 The right panel is the part people get wrong. Magnitude error is not the metric that
 matters — **sign agreement** is. The compass keeps 99.56% sign agreement at weight ≥6;
-`leg_T1` drops to 85.7% at the same threshold, because leg circuits are far more E/I
+`leg1` drops to 85.7% at the same threshold, because leg circuits are far more E/I
 balanced and their signed sums cross zero sooner.
 
 ### A metric bug worth repeating
@@ -201,8 +201,8 @@ whether anything moves:
 |---|--:|--:|
 | `gate` | 3,524 | **27.3%** |
 | `compass` | 229 | 16.3% |
-| `descending` | 323 | 4.7% |
-| `legs_all` | 1,011 | 1.0% |
+| `commands` | 323 | 4.7% |
+| `legs` | 1,011 | 1.0% |
 
 Asserted in `eval_gating_changes_behaviour`, so a refactor that flattens modulatory edges
 into the chemical list fails the suite instead of quietly shipping.
@@ -224,7 +224,7 @@ knee         FTi    Ti extensor / Ti flexor     knee
 ankle        TiTa   Ta levator / Ta depressor   ankle
 ```
 
-34 decodes fall out of `legs_all`: 3 leg pairs × 5 joints, plus 4 wing channels
+34 decodes fall out of `legs`: 3 leg pairs × 5 joints, plus 4 wing channels
 (subclass `wm`, split power vs steering). 100% joint coverage on hexapod, quadruped and
 biped at 3 DOF.
 
