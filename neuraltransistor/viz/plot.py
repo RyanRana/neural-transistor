@@ -190,11 +190,17 @@ def ring(theta, rates, ax=None, figsize=(4.6, 4.6), title=None, label=None):
 
 def trace(t, series: dict, ax=None, figsize=(7.2, 3.4), xlabel="time (ms)",
           ylabel="", title=None, vlines=None):
-    """Time series, one line per key."""
+    """Time series, one line per key.
+
+    A series value may be a plain y array (sharing ``t``) or a ``(t, y)`` pair, because
+    traces that came from different stimuli legitimately have different lengths and
+    forcing them onto one time base is how you get a shape error instead of a plot.
+    """
     with style() as plt:
         fig, ax = _fig(ax, figsize)
         for (name, y), col in zip(series.items(), SERIES):
-            ax.plot(t, y, color=col, lw=1.6, label=name)
+            tx, yy = (y if isinstance(y, tuple) else (t, y))
+            ax.plot(tx, yy, color=col, lw=1.6, label=name)
         for v, lab, col in (vlines or []):
             ax.axvline(v, color=col, lw=1.0, ls=(0, (4, 3)))
             if lab:

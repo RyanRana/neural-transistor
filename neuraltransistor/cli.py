@@ -298,6 +298,7 @@ def cmd_demo(args):
     from neuraltransistor import viz
     from neuraltransistor.circuit import noise
     from neuraltransistor.sensors.retina import Retina, build_resampler
+    from neuraltransistor.circuit.extract import from_library
     from neuraltransistor.stimuli import Looming, giant_fiber
     import os
     conn = _conn(args)
@@ -325,13 +326,36 @@ def cmd_demo(args):
                ).savefig(f"{out}/eye-sample.png", bbox_inches="tight")
     print("  eye-sample.png")
     gf = giant_fiber(lo)
-    viz.trace(lo.t_ms, {"LC4 \u00b7 angular velocity": gf["v_LC4"] * 1.62,
-                        "LPLC2 \u00b7 angular size": gf["v_LPLC2"] * 1.45,
-                        "giant fiber": gf["v_GF"]},
-              xlabel="time before collision (ms)", ylabel="mV",
-              title="published giant-fiber model, l/|v| = 40 ms").savefig(
-        f"{out}/gf-model.png", bbox_inches="tight")
+    viz.trace(lo.t_ms, {"LC4 \u00b7 approach speed": gf["v_LC4"] * 1.62,
+                        "LPLC2 \u00b7 object size": gf["v_LPLC2"] * 1.45,
+                        "escape command": gf["v_GF"]},
+              xlabel="time before impact (ms)", ylabel="mV",
+              title="collision detector, object closing at r/v = 40 ms",
+              vlines=[(gf["peak_t_ms"],
+                       f"fires, {gf['peak_size_deg']:.0f}\u00b0 wide", "#b91c1c")]
+              ).savefig(f"{out}/gf-model.png", bbox_inches="tight")
     print("  gf-model.png")
+    sw = {f"r/v = {lv*1000:.0f} ms": (Looming(l_over_v=lv, dt=0.0005).t_ms,
+                                      giant_fiber(Looming(l_over_v=lv, dt=0.0005))["v_GF"])
+          for lv in (0.010, 0.020, 0.040, 0.080)}
+    viz.trace(None, sw, xlabel="time before impact (ms)",
+              ylabel="escape command (mV)",
+              title="fires earlier for slower approaches \u2014 every peak inside the "
+                    "published bracket").savefig(f"{out}/gf-sweep.png", bbox_inches="tight")
+    print("  gf-sweep.png")
+    from neuraltransistor.morph import retarget as _R, spec as _M
+    from neuraltransistor.recipe import build_all
+    legs = from_library(conn, "legs_all"); dec = _M.decode_motor(legs, conn.neurons)
+    with viz.style() as _p:
+        f2, axes = _p.subplots(1, 3, figsize=(12.6, 4.8))
+    for ax, (nm, g) in zip(axes, [("hexapod", "tripod"), ("quadruped", "trot"),
+                                  ("biped", "alternate")]):
+        m = _M.BUILTIN[nm](); viz.morphology(m, _R.retarget(m, dec, gait=g), ax=ax)
+    f2.savefig(f"{out}/form-factors.png", bbox_inches="tight")
+    print("  form-factors.png")
+    viz.recipes(build_all(conn, "out", emit=False, verbose=False)).savefig(
+        f"{out}/recipes.png", bbox_inches="tight")
+    print("  recipes.png")
 
 
 def cmd_ui(args):
