@@ -39,17 +39,7 @@ from flyforge.ir.runtime import Reference
 from flyforge.quant.quantize import compress, input_drive
 from flyforge.target.mcu_int8 import emit_c
 
-#: Real devices, from datasheets. (sram_KB, flash_KB, clock_MHz, note)
-DEVICES = {
-    "STM32F411":  (128,   512,  100, "Cortex-M4F, common on nano-quad flight controllers"),
-    "STM32H743":  (1024,  2048, 480, "Cortex-M7, DSP + double FPU"),
-    "STM32U585":  (786,   2048, 160, "Cortex-M33, ultra-low-power line"),
-    "ESP32-S3":   (512,   8192, 240, "Xtensa LX7 dual core, vector extensions"),
-    "RP2350":     (520,   4096, 150, "dual Cortex-M33 / RISC-V"),
-    "nRF52840":   (256,   1024, 64,  "Cortex-M4F, BLE, very low power"),
-    "GAP9":       (1536,  2048, 370, "RISC-V PULP cluster + NE16 accelerator"),
-    "Apollo4":    (2048,  2048, 192, "Cortex-M4F, sub-mW class"),
-}
+from flyforge.target.devices import DEVICES, fit_report
 
 
 def _sha(x) -> str:
@@ -215,23 +205,22 @@ def eval_quant_fidelity(ir: CircuitIR, bits=(8, 4, 2)) -> EvalResult:
         _, rep = compress(ir, weight_bits=b, scheme="log", prune_min_weight=1)
         rows[f"w{b}"] = {"drive_err_mean": round(rep.drive_rel_err_mean, 5),
                          "drive_err_p95": round(rep.drive_rel_err_p95, 5),
+                         "drive_corr": round(rep.drive_corr, 5),
+                         "sign_agreement": round(rep.drive_sign_agreement, 5),
                          "sign_flips": rep.drive_sign_flips,
                          "KB": round(rep.bytes_after / 1024, 1)}
         if b == 8 and rep.drive_rel_err_mean > 0.02:
             ok = False
     return EvalResult("quant_fidelity", ok, detail=rows,
                       note=f"int8 drive error {rows['w8']['drive_err_mean']:.3%}, "
+                           f"r={rows['w8']['drive_corr']:.4f}, "
                            f"{rows['w8']['sign_flips']} sign flips")
 
 
 def eval_budget_fit(ir: CircuitIR, weight_bits: int = 8) -> EvalResult:
     with tempfile.TemporaryDirectory() as td:
         rep = emit_c(ir, td, weight_bits=weight_bits)
-    fits = {}
-    for dev, (sram, flash, mhz, _n) in DEVICES.items():
-        fits[dev] = {"flash_ok": rep.flash_B <= flash * 1024,
-                     "ram_ok": rep.ram_B <= sram * 1024,
-                     "fits": rep.flash_B <= flash * 1024 and rep.ram_B <= sram * 1024}
+    fits = fit_report(rep.flash_B, rep.ram_B)
     n = sum(1 for v in fits.values() if v["fits"])
     return EvalResult("budget_fit", n > 0,
                       detail={"flash_KB": round(rep.flash_B / 1024, 1),
@@ -301,6 +290,31 @@ def eval_noise_monotonic(conn: Connectome) -> EvalResult:
                            f"P(real|w=1)={float(m.p_real(np.array([1]))[0]):.3f}")
 
 
+def eval_prune_tolerance(ir: CircuitIR, weights=(3, 6, 12)) -> EvalResult:
+    """How gracefully a circuit degrades under reliability pruning.
+
+    Reported as correlation and sign agreement rather than magnitude error alone: a
+    compression that preserves the ordering and the polarity of every neuron's input has
+    preserved the computation even where magnitudes moved. Circuits differ a lot here --
+    an E/I-balanced circuit flips signs long before a lopsided one does.
+    """
+    rows = {}
+    for w in weights:
+        _, rep = compress(ir, weight_bits=8, scheme="log", prune_min_weight=w)
+        rows[f"w>={w}"] = {"edges_kept": round(rep.edge_retention, 4),
+                           "synapses_kept": round(rep.synapse_retention, 4),
+                           "drive_err": round(rep.drive_rel_err_mean, 4),
+                           "corr": round(rep.drive_corr, 4),
+                           "sign_agreement": round(rep.drive_sign_agreement, 4),
+                           "KB": round(rep.bytes_after / 1024, 1)}
+    mid = rows[f"w>={weights[1]}"]
+    ok = mid["corr"] > 0.9
+    return EvalResult("prune_tolerance", ok, detail=rows,
+                      note=(f"at weight>={weights[1]}: keeps {mid['edges_kept']:.0%} edges / "
+                            f"{mid['synapses_kept']:.0%} synapses, r={mid['corr']:.4f}, "
+                            f"sign agreement {mid['sign_agreement']:.1%}"))
+
+
 def eval_gating_changes_behaviour(ir: CircuitIR, ticks: int = 120) -> EvalResult:
     """The modulatory pathway must actually gate, not merely be present.
 
@@ -342,6 +356,25 @@ def eval_gating_changes_behaviour(ir: CircuitIR, ticks: int = 120) -> EvalResult
              else "silencing the modulatory pathway changed nothing: gate is inert")
 
 
+def eval_bump_forms(ir: CircuitIR, conn) -> EvalResult:
+    """Does the compass produce a spatially localized bump at all?
+
+    A genuine positive about the connectome: the wiring alone, with no fitted dynamics,
+    concentrates EPG activity into a single localized bump of roughly the measured width.
+    Persistence is reported separately and is a separate question -- see
+    flyforge.evals.functional and docs/FINDINGS.md.
+    """
+    from flyforge.evals.functional import bump_probe
+    r = bump_probe(ir, conn.neurons, drive_ticks=250, hold_ticks=250)
+    if not r.get("ok"):
+        return EvalResult("bump_forms", False, detail=r, note=r.get("reason", "probe failed"))
+    return EvalResult(
+        "bump_forms", bool(r["bump_formed"]), detail=r,
+        note=(f"R={r['R_driven']:.3f} on a {r['n_ring']}-neuron ring under drive "
+              f"({'in' if r['bump_formed'] else 'outside'} the measured band); "
+              f"does NOT persist (R_held={r['R_held']:.3f}) -- dynamics are unfitted"))
+
+
 # --------------------------------------------------------------------------- #
 
 def run_all(conn: Connectome, circuits=("gate_readout", "compass", "descending"),
@@ -354,9 +387,12 @@ def run_all(conn: Connectome, circuits=("gate_readout", "compass", "descending")
     for key in circuits:
         ir = from_library(conn, key)
         rs = [eval_roundtrip(ir), eval_compiles(ir), eval_c_equivalence(ir),
-              eval_throughput(ir), eval_quant_fidelity(ir), eval_budget_fit(ir)]
+              eval_throughput(ir), eval_quant_fidelity(ir), eval_budget_fit(ir),
+              eval_prune_tolerance(ir)]
         if ir.n_mod_edges:
             rs.append(eval_gating_changes_behaviour(ir))
+        if key == "compass":
+            rs.append(eval_bump_forms(ir, conn))
         per_circuit[key] = [asdict(r) for r in rs]
         if verbose:
             print(f"\n--- {key} ({ir.n_neurons:,} neurons, {ir.n_edges:,} edges) ---")

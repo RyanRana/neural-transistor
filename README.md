@@ -3,204 +3,138 @@
 Compile *Drosophila* connectome circuits into quantized controllers that run on
 milliwatt hardware.
 
-The male-CNS connectome is brain **and** ventral nerve cord in one volume: 211,577
-annotated bodies, 151,856,684 edges, 311,833,243 synapses. That means the leg circuits,
-the compass, the visual system and the command bus between them are all in the same
-coordinate space, and you can cut a runnable controller out of any of them.
+<img src="docs/img/ui.png" width="100%" alt="flyforge UI">
 
-flyforge is the toolchain for doing that: select a circuit, decide how much of it is
-real, compile it to int8 C or a ROS 2 package, and get told what it costs.
+---
 
-```
-connectome ──▶ select ──▶ sign ──▶ [ CircuitIR ] ──▶ prune ──▶ quantize ──▶ int8 C
-                                        ▲                                └▶ ROS 2 pkg
-              morphology (URDF) ────────┤
-              sensor (hex retina) ──────┘
-```
-
-## Why this fits on a microcontroller at all
-
-The fly's own architecture is a stack of narrow waists, and those waists are the
-controller. 89,403 optic-lobe neurons compress to 9,201 visual projection neurons. The
-entire brain commands the entire body through **1,314 descending neurons**. The whole
-animal acts through **708 motor neurons**. You do not need 180,000 neurons on the robot;
-you need the circuit that produces the right command vector.
-
-Measured, from the real data:
-
-| circuit | neurons | edges | int8 flash | RAM |
-|---|--:|--:|--:|--:|
-| `gate_readout` — MBON valence + dopaminergic gate | 429 | 4,144 | **57 KB** | 4 KB |
-| `compass` — EPG/PEN ring attractor | 452 | 54,290 | 188 KB | 4 KB |
-| `descending` — the whole brain→body bus | 1,314 | 71,762 | 239 KB | 12 KB |
-| `path_integration` — compass + PFN + FC2 + PFL | 1,651 | 125,198 | 381 KB | 5 KB |
-| `leg_T1` — one front leg, premotor + MN + proprioceptors | 3,553 | 311,915 | 949 KB | 11 KB |
-| `legs_all` — six legs and their coordination | 11,790 | 1,569,085 | 4.7 MB | 104 KB |
-
-`gate_readout` and `compass` fit all eight reference devices, down to an nRF52840.
-
-## The part that is actually new
-
-Connectomics prunes weak edges by convention — keep ≥5 synapses, or ≥10, depending on
-the paper. Nobody reports what that costs, because measuring it looks like it needs
-ground truth nobody has.
-
-It doesn't. **The fly is bilaterally symmetric, and the two hemispheres were
-reconstructed independently.** They are a replicate pair. A real pathway should appear on
-both sides; a reconstruction artifact has no reason to. So reproducibility across
-hemispheres measures whether a connection is real, with no labels at all.
-
-The design is unusually clean here: 75,215 left neurons vs 75,119 right, 10,940 of
-11,230 types present on both sides, and a median per-type cell-count difference of
-exactly **0**.
-
-Measured over 19,654,874 ipsilateral typed edges:
-
-| weight | edges | reproduced | P(real) |
-|--:|--:|--:|--:|
-| 1 | 7,994,902 | 83.9% | **0.786** |
-| 2 | 3,718,546 | 90.2% | 0.875 |
-| 3 | 2,042,085 | 93.3% | 0.918 |
-| 4–5 | 2,166,674 | 95.5% | 0.949 |
-| 6–7 | 1,117,581 | 97.0% | 0.970 |
-| 8–11 | 1,097,106 | 97.9% | 0.983 |
-| 12–19 | 802,046 | 98.6% | 0.993 |
-| ≥20 | 715,934 | 99.0% | ~0.999 |
-| *shuffled control* | | *28.0%* | |
-
-Reproducibility saturates at 99.2%, not 100% — some real connections are genuinely
-unilateral. So an observed rate is a mixture of real pathways reproducing at the ceiling
-and noise reproducing at chance, and inverting it gives a per-edge posterior:
-
-```
-P(real | w) = (observed(w) − chance) / (ceiling − chance)
-```
-
-**About one in five single-synapse edges is spurious, and they are 40% of the compiled
-graph.** That turns an arbitrary threshold into a stated confidence:
+## Install
 
 ```bash
-flyforge compress compass --p-real 0.95     # → weight ≥ 6, keeps 51% of edges, 90% of synapses
+git clone <repo> && cd flyforge
+uv venv --python 3.12 && uv pip install -e .
+export FLYFORGE_DATA=~/fly-connectome          # the three male-CNS .feather files
+flyforge index                                 # builds the CSR index, ~75 s, once
 ```
 
-Caveat, stated plainly: reproducibility is measured at the level of a *type pair*, so
-this is the probability the **pathway** is real, an upper bound on the probability the
-individual cell-to-cell edge is. Right quantity for deciding what to compile; wrong
-quantity for a claim about one synapse.
+No account, no token. The male-CNS release is public:
+`gs://flyem-male-cns/` reads anonymously.
 
-## The trap that silently breaks everything
-
-Everyone writes this dict:
+## API
 
 ```python
-{"acetylcholine": +1, "glutamate": -1, "gaba": -1}
+import flyforge as ff
+
+conn = ff.load()                          # 211,577 neurons, 26,028,386 edges (cached)
+ir   = ff.circuit(conn, "compass")        # 452 neurons, 54,290 edges, 188 KB
+
+ir, stats = ff.prune(ir, p_real=0.95)     # keep edges 95% likely to be real
+ir, rep   = ff.quantize(ir, bits=8)       # log codebook + delta-encoded index
+print(rep)   # 188KB -> 74KB (2.6x) | drive err 0.02% | r=1.0000 | 0 sign flips
+
+ff.emit_c(ir, "out/")                     # freestanding C99, no malloc, no libc
 ```
 
-**Glutamate is inhibitory in the fly CNS but excitatory at the neuromuscular junction.**
-Fly motor neurons are glutamatergic. Apply the naive map and you invert the entire motor
-output layer — the robot drives every actuator backwards, and nothing in the pipeline
-complains, because the graph is still perfectly well-formed.
+Cut your own circuit with a selector instead of the library:
 
-Measured: the naive map calls **304 of 708** motor neurons inhibitory. flyforge's
-`assign_signs` applies the efferent exception and brings that to **10**, reporting all
-166 corrections it made.
+```python
+valence = ff.circuit(conn, ff.Sel.type(r"^MBON") | ff.Sel.type(r"^PAM"), name="valence")
+# valence: 413 neurons, 3,725 edges, 7,408 modulatory
+```
 
-## Quickstart
+Fit a byte budget — it returns `None` rather than hand you an over-budget artifact:
+
+```python
+ir, rep, trials = ff.budget(ir, kb=80)
+# log w4/i8 prune>=2: 247KB -> 66KB (3.8x) | drive err 6.6% | r=0.9986 | sign agree 98.7%
+```
+
+Target a real robot by reading its URDF:
+
+```python
+spec, report = ff.morphology(urdf="my_robot.urdf")   # 4 limbs / 12 joints
+plan = ff.retarget(conn, spec, gait="trot")          # binds fly leg circuits to limbs
+ff.emit_ros2(ir, spec, "out/")                       # ament_python package
+```
+
+Run it in Python to check against the device:
+
+```python
+rt = ff.Reference(ir)                     # integer-exact, matches the emitted C bit for bit
+rt.run(200, drive)
+```
+
+## CLI
 
 ```bash
-uv venv --python 3.12 && uv pip install -e .
-export FLYFORGE_DATA=~/fly-connectome     # the three .feather files
-
-flyforge index                            # build the CSR index (75 s, once)
-flyforge noise                            # the reproducibility curve above
 flyforge list                             # the circuit library
+flyforge noise                            # the reproducibility curve
 flyforge extract compass -o compass.fcx
 flyforge compress compass --p-real 0.95 --budget-kb 120
 flyforge emit compass -o out/ --target mcu
 flyforge emit legs_all -o out/ --target ros2 --urdf my_robot.urdf
-flyforge morph --urdf my_robot.urdf
-flyforge eval
-flyforge ui                               # minimal local UI on :8765
+flyforge eval                             # 33 evals
+flyforge ui                               # the page above, on :8765
 ```
 
-## Morphology
+## The library
 
-Motor neurons are annotated by **target muscle** — `Ti extensor MN`,
-`Tergopleural/Pleural promotor MN`, `Ta levator MN` — and a muscle name states a joint
-and a direction, both of which transfer to any articulated robot. That makes retargeting
-principled rather than hand-waved.
+| circuit | neurons | edges | int8 flash | fits |
+|---|--:|--:|--:|---|
+| `gate_readout` — MBON valence + dopaminergic gate | 429 | 4,144 | **57 KB** | all 10 |
+| `compass` — EPG/PEN ring attractor | 452 | 54,290 | 188 KB | all 10 |
+| `descending` — the entire brain→body bus | 1,314 | 71,762 | 239 KB | all 10 |
+| `path_integration` — + PFN, FC2, PFL | 1,651 | 125,198 | 381 KB | all 10 |
+| `leg_T1` — one front leg, premotor + MN + proprioceptors | 3,553 | 311,915 | 949 KB | 8 |
+| `legs_all` — six legs and their coordination | 11,790 | 1,569,085 | 4.7 MB | 1 |
 
-```
-coxa_yaw     ThC    promotor / remotor          hip yaw
-coxa_roll    ThC    abductor / adductor         hip roll
-trochanter   CTr    Tr extensor / Tr flexor     hip pitch
-knee         FTi    Ti extensor / Ti flexor     knee
-ankle        TiTa   Ta levator / Ta depressor   ankle
-```
+Plus `steering`, `optic_motion`, `looming`, `optic_flow`, `leg_T2/T3`, `gate`.
 
-Joints are driven by antagonist pairs (`rate(agonist) − rate(antagonist)`), so
-co-contraction produces stiffness rather than motion, as it does in the animal. Pass a
-URDF and the limbs and joint roles are read off the robot itself. Hexapod, quadruped,
-biped, winged and N-module layouts are built in, and the retargeter reports what it could
-not use — a biped leaves four of six leg circuits unbound at the motor boundary, and says
-so.
+It fits because the fly's own architecture is a stack of narrow waists: 89,403
+optic-lobe neurons compress to 9,201 projection neurons, the whole brain commands the
+whole body through **1,314 descending neurons**, and the animal acts through **708 motor
+neurons**.
 
-## What is verified, and what is not
+---
 
-**Verified by measurement, under test (`pytest tests/` 15 passing, `flyforge eval` 31/31):**
+## Two things worth knowing
 
-- The emitted C is **bit-identical to the numpy reference for 64/64 ticks**, on every
-  circuit tested — same Q8.8 fixed point, same saturation, same refractory handling
-- Emitted C compiles clean under `-Wall -Wextra -Werror`
-- int8 costs **0.11–0.37% mean synaptic drive error and zero sign flips**
-- Bilateral reproducibility is monotone in synapse count; chance 0.280, ceiling 0.992
-- The NMJ correction fires on 166 motor neurons and changes the naive answer
-- Extraction is deterministic: identical fingerprint across runs
-- `.fcx` survives save/load with its fingerprint intact
-- Compass runs **40,445 tick/s (24.7 µs/tick)** on host — the fly's own loop is ~200 Hz
-- Motor decoding covers all six legs × five joints, 100% joint coverage on
-  hexapod/quadruped/biped
-- The budget solver returns `None` rather than an over-budget artifact when nothing fits
-- **Gating is functional, not decorative**: silencing the dopaminergic pathway shifts
-  3,524 neurons / 27.3% mean rate in `gate`, 229 / 16.3% in `compass`. Compiling those
-  edges additively would leave a well-formed graph with the gating silently gone, so
-  this is asserted rather than assumed
-- `legs_all` (11,790 neurons, 1,569,085 edges) stays bit-identical to reference and runs
-  3,076 tick/s; int8 costs 0.611% drive error and 2 sign flips
+**Bilateral symmetry is a free replicate experiment.** The hemispheres were reconstructed
+independently, so cross-hemisphere reproducibility measures whether an edge is real with
+no ground truth. That turns the field's arbitrary "keep ≥5 synapses" convention into a
+stated confidence.
 
-**Not yet true:**
+<img src="docs/img/noise-curve.png" width="100%" alt="bilateral reproducibility">
 
-- **Dynamics are not fitted.** `Dynamics` defaults are LIF starting points, not results.
-  The connectome gives structure; time constants, thresholds and gains are free
-  parameters and nothing has tuned them against behaviour yet. Every artifact keeps
-  measured and fitted quantities in separate arrays so you can always tell which is which.
-- **No circuit has been shown to do its job.** The compass compiles and runs; whether it
-  holds a heading bump is untested. That is the next milestone, not a claim.
-- **Nothing has run on real hardware.** All device fits are computed against datasheet
-  flash/SRAM, not flashed and measured. No power number here is measured.
-- The ROS 2 node's sensor adapters are stubs past the IMU path.
-- The SNN backend (Loihi / Speck) does not exist; the IR is shaped for it, that is all.
-- `optic_motion` at 4.9 MB does not fit any target device without pruning that has not
-  been validated.
+**The compass forms a bump and cannot hold it.** Swept across 250× of global synaptic
+gain, the connectome alone produces a correctly-sized bump under drive and zero
+persistence without it. Connectivity is not dynamics.
 
-## Layout
+<img src="docs/img/bump-sweep.png" width="100%" alt="bump gain sweep">
 
-```
-flyforge/data       male-CNS loader, CSR + reverse index, cached
-flyforge/circuit    selection DSL, extraction, sign assignment, noise model
-flyforge/ir         CircuitIR, .fcx container, integer-exact reference runtime
-flyforge/quant      pruning, log quantization, delta-indexing, budget solver
-flyforge/target     int8 C emitter, ROS 2 package emitter
-flyforge/morph      muscle→joint map, URDF import, gait retargeting
-flyforge/sensors    hex-lattice retina resampler
-flyforge/evals      the claims above, executed
-flyforge/api        the local UI
-```
+Both in detail, with the numbers and the code: **[docs/FINDINGS.md](docs/FINDINGS.md)**.
 
-## Data
+## Docs
 
-male-CNS v1.0 (`minconf 0.5`), three Feather tables in `$FLYFORGE_DATA`. The index is
-built over **annotated bodies only**, which keeps 17.1% of edges and 40.2% of synapses —
-the dropped material is overwhelmingly single-synapse fragment noise, and retained edges
-average 4.82 synapses against 2.05 across the raw table. That filter is recorded in
-every artifact's provenance rather than applied quietly.
+| | |
+|---|---|
+| [FINDINGS.md](docs/FINDINGS.md) | the noise model, the motor-neuron sign trap, the bump result |
+| [DYNAMICS.md](docs/DYNAMICS.md) | what the connectome does *not* contain, and who has fitted it |
+| [TARGETS.md](docs/TARGETS.md) | real chips, sourced power numbers, what has actually flown |
+| [SENSORS.md](docs/SENSORS.md) | mapping a camera onto a 886-ommatidium eye |
+| [STATUS.md](docs/STATUS.md) | verified vs code-exists vs not built |
+| [NOTES.md](NOTES.md) | running log |
+
+## Honesty
+
+`pytest tests/` — 15 passing. `flyforge eval` — 33 passing.
+
+**Verified:** emitted C is bit-identical to the numpy reference for 64/64 ticks on every
+circuit up to 11,790 neurons · int8 costs 0.02–0.6% drive error at r ≥ 0.999 · the
+motor-neuron sign guard rescues 166 of 708 neurons · extraction is deterministic ·
+compass runs 40,445 tick/s on host.
+
+**Not true yet:** no dynamics are fitted, so no circuit is claimed to *work* — the
+compass bump result above is the measurement of that gap, not a workaround for it.
+Nothing has been flashed to hardware; every device fit is datasheet arithmetic and no
+power number here is measured. Sensor and actuator adapters are the thinnest layer in
+the repo. Full ledger in [STATUS.md](docs/STATUS.md).

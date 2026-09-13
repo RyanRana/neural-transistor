@@ -21,3 +21,11 @@ running log of things that turned out to be true. one line each.
 - best way to prove the gating actually compiles is to silence it and see if anything moves, 3524 neurons shift in the mushroom body so it is real
 - emitted c matches the numpy reference bit for bit for 64 ticks which is the only reason i trust any of the size numbers
 - a 70 degree camera only sees 22.8% of what a fly sees, you need like 120 degrees minimum before the optic circuits make sense
+- the compass forms a bump at every global gain i tried and holds it at none of them, r_held is exactly 0.000 across 250x of scale, that is the whole "connectivity is not dynamics" thing in one number
+- the epg ring order is sitting right there in the instance strings, EPG(PB08)_L4 gives you the wedge, 46 neurons at 16 positions matching the 16 eb tiles
+- my drive error metric was lying to me, dividing by the signed sum blows up on e/i balanced neurons and overstated damage 4x, normalise by total input instead and report sign agreement
+- the acceptance angle everyone quotes for the fly eye is 5 degrees but that is a formula prediction, actual recordings say 8.2, so the eye is way blurrier than textbooks and cameras match it better than you'd think
+- a 128x128 fisheye covers the whole fly visual field AND gives a smaller resampler than a 320x320 at 70 degrees, spend the budget on the lens not the sensor
+- greenwaves went into liquidation jan 2025 and intel archived every lava repo may 2026, so gap9 and loihi2 both quietly stopped being real options while nobody updated the blog posts
+- speck can't do this at all and not for the reason you'd guess, fan out is 2 per core not per neuron so arbitrary graphs are structurally inexpressible
+- compass is 26.6% dense so it runs on stock dense cmsis-nn kernels with zero new work, optic_motion would cost 502x to densify

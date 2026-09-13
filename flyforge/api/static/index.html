@@ -52,6 +52,8 @@
   footer{border-top:1px solid var(--line);padding-top:16px;color:var(--dim);
          font-size:11px;display:flex;gap:18px;flex-wrap:wrap}
   footer b{color:var(--fg);font-weight:500}
+  footer i{font-style:normal;opacity:.35;margin:0 2px}
+  .dev.gone{opacity:.45;text-decoration:line-through}
   .err{color:#e07a5f}
   @media(max-width:560px){.nums{grid-template-columns:1fr 1fr}.n b{font-size:24px}}
 </style>
@@ -120,14 +122,15 @@ async function go(){
   $('#v-edges').textContent=fmt(d.edges);
   $('#v-kb').textContent=(d.kb>=1024?(d.kb/1024).toFixed(1)+' MB':d.kb.toFixed(0)+' KB');
   $('#devs').innerHTML=d.devices.map(x=>
-    `<span class="dev ${x.fits?'fit':''}" title="${x.note} — ${x.flash_kb}KB flash / ${x.sram_kb}KB SRAM">${x.name}</span>`).join('');
+    `<span class="dev ${x.fits?'fit':''} ${x.available?'':'gone'}" title="${x.note} — ${x.flash_kb}KB flash / ${x.sram_kb}KB SRAM${x.mw?' — '+x.mw+' mW':''}">${x.name}${x.available?'':' †'}</span>`).join('');
   $('#foot').innerHTML=[
-    `weight ≥ <b>${d.min_weight}</b> syn`,
-    `kept <b>${(d.edge_retention*100).toFixed(0)}%</b> edges / <b>${(d.synapse_retention*100).toFixed(0)}%</b> synapses`,
-    `drive error <b>${(d.drive_err*100).toFixed(2)}%</b>`,
+    `<b>${d.min_weight}</b>+ syn`,
+    `<b>${(d.edge_retention*100).toFixed(0)}%</b> edges kept`,
+    `<b>${(d.synapse_retention*100).toFixed(0)}%</b> synapses`,
+    `<b>${(d.drive_err*100).toFixed(2)}%</b> drive error`,
     `<b>${d.sign_flips}</b> sign flips`,
-    `RAM <b>${d.ram_kb.toFixed(0)} KB</b>`,
-  ].join('<span style="opacity:.4">·</span>');
+    `<b>${d.ram_kb.toFixed(0)} KB</b> RAM`,
+  ].join('<i>·</i>');
 }
 boot();
 </script>

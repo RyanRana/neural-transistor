@@ -19,9 +19,9 @@ Last updated 2026-09-13.
 | F8 | ROS 2 package emitter | code exists |
 | F9 | Hex-lattice retina resampler | code exists |
 | F10 | Local UI | **verified** |
-| F11 | Eval suite | **verified** (31/31 over 4 circuits) |
+| F11 | Eval suite | **verified** (33 evals) |
 | F12 | Dynamics fitting against behaviour | **not built** |
-| F13 | Functional validation (does the compass hold a bump) | **not built** |
+| F13 | Functional validation (does the compass hold a bump) | **measured — negative** |
 | F14 | SNN backend (Loihi / Speck) | **not built** |
 | F15 | On-hardware flash + power measurement | **not built** |
 
@@ -64,8 +64,17 @@ reference for 64/64 ticks and runs 3,076 tick/s (325 µs/tick) on host. int8 cos
 drive error and 2 sign flips out of 11,790 neurons. It fits 1 of 8 reference devices
 (ESP32-S3, on flash).
 
-**Retina (F9).** A 70° camera covers 22.8% of the fly's visual field; 120° covers 48.5%.
-This is computed, not measured on a sensor.
+**Functional probe (F13).** The compass ring is recoverable from `instance` strings: 46
+EPG neurons at 16 distinct ring positions. Swept over 250× of global synaptic gain, a
+bump forms (R up to 0.582, inside the measured band) and **never persists** — R_held =
+0.000 at every scale, with nothing silent and nothing saturated. This reproduces Chang
+2023 / Duan 2025 / Beiran & Litwin-Kumar 2025 on a dataset none of them used. The wiring
+gives spatial structure, not an attractor.
+
+**Retina (F9).** Using the *measured* acceptance angle Δρ = 8.2° (not the textbook 5°,
+which is a Snyder-formula prediction): a 46° lens covers 13.3% of the fly's visual field,
+70° covers 26.1%, 120° covers 54.1%, and a 128×128 fisheye at 180° covers 100% with a
+*smaller* resampler than the 320×320. Computed, not measured on a sensor.
 
 ## Not built — be explicit
 
@@ -75,7 +84,8 @@ This is computed, not measured on a sensor.
 | Functional validation | Nobody has shown the compass holds a bump, that T4/T5 reports motion direction, or that leg circuits produce a gait. Compiling is not working. |
 | Hardware | Every device fit is datasheet arithmetic. Nothing has been flashed. There is no measured power number anywhere in this repo. |
 | SNN backend | The IR separates additive and multiplicative edges partly so a spiking backend is possible. None is written. |
-| Sensor adapters | The ROS 2 node wires the IMU path and stubs the rest. |
+| Sensor adapters | The ROS 2 node wires the IMU path and stubs the rest. No event-stream reader, no calibration against a physical sensor. |
+| Actuator model | `MotorDecode.command()` is `mean(agonist) − mean(antagonist)`. There is no force-per-spike, no calcium filter, no torque model, and the ROS 2 node publishes one value to every joint. This is a placeholder, not a controller. |
 | `optic_motion` | 4.9 MB. Fits nothing. Needs pruning that has not been validated. |
 
 ## Known sharp edges
@@ -88,5 +98,10 @@ This is computed, not measured on a sensor.
   the individual synapse.
 - `fit_budget` returns `None` when nothing fits. Do not "fix" this to return the least
   bad option; an over-budget artifact must not look like a success.
+- Drive error must be normalised by **total** input magnitude, not the signed sum. The
+  signed version explodes on E/I-balanced neurons and overstated damage fourfold before
+  it was caught. Report correlation and sign agreement alongside it.
+- `winged()` runs at 250 Hz, set by body dynamics, NOT by the ~200 Hz wingbeat. The
+  wingbeat is a carrier the controller modulates, not a rate it must resolve.
 - Modulatory edges must stay multiplicative. Compiling them as ordinary synapses leaves
   a well-formed graph with the gating silently removed.

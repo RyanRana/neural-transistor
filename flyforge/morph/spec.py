@@ -133,12 +133,15 @@ def biped(dof=3, hz=200.0) -> MorphologySpec:
                                "the rest of the coordination graph is dropped.")
 
 
-def winged(n_wings=2, hz=1000.0) -> MorphologySpec:
+def winged(n_wings=2, hz=250.0) -> MorphologySpec:
     return MorphologySpec("winged", [], wings=n_wings, control_hz=hz,
                           note="Flapping flight. Power muscles set amplitude, steering "
-                               "muscles set the left/right asymmetry. Control rate is "
-                               "higher because wingbeat is ~200 Hz and needs "
-                               "sub-cycle resolution.")
+                               "muscles set the left/right asymmetry. The control rate "
+                               "is set by BODY dynamics, not wingbeat frequency: a "
+                               "flapping micro-UAV's unstable body mode needs roughly "
+                               "150-300 Hz with <15 ms latency, and the ~200 Hz wingbeat "
+                               "is a carrier the controller modulates rather than a rate "
+                               "it must resolve. RoboBee's own papers make this point.")
 
 
 def modular(n=4, dof=2, hz=200.0) -> MorphologySpec:

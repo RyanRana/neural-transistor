@@ -41,7 +41,7 @@ def _circuit(key: str):
 
 def _compute(key: str, p_real: float, bits: int) -> dict:
     from flyforge.circuit import noise
-    from flyforge.evals.suite import DEVICES
+    from flyforge.target.devices import DEVICES
     from flyforge.quant.quantize import compress
     from flyforge.target.mcu_int8 import emit_c
     import tempfile
@@ -55,10 +55,10 @@ def _compute(key: str, p_real: float, bits: int) -> dict:
         er = emit_c(out, td, weight_bits=bits)
 
     devices = []
-    for dev, (sram, flash, mhz, note) in DEVICES.items():
-        devices.append({"name": dev,
-                        "fits": er.flash_B <= flash * 1024 and er.ram_B <= sram * 1024,
-                        "flash_kb": flash, "sram_kb": sram, "note": note})
+    for dev, d in DEVICES.items():
+        devices.append({"name": dev, "fits": d.fits(er.flash_B, er.ram_B),
+                        "flash_kb": d.flash_kb, "sram_kb": d.sram_kb,
+                        "mw": d.active_mw, "available": d.available, "note": d.note})
     return {
         "circuit": key,
         "doc": ir.provenance.get("doc", ""),

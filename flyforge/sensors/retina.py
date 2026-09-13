@@ -1,10 +1,21 @@
 """Mapping a real camera onto the fly's eye.
 
 The fly eye is a hexagonal lattice of ommatidia, each with a Gaussian acceptance
-function. Drosophila: roughly 750-800 ommatidia per eye, interommatidial angle
-(delta-phi) about 5 degrees, acceptance angle (delta-rho) about 5 degrees, covering
-close to a full hemisphere per eye. Every camera you can actually bolt to a micro-robot
-is a rectangular array behind a lens with a much narrower field of view.
+function. Every camera you can actually bolt to a micro-robot is a rectangular array
+behind a lens with a much narrower field of view.
+
+**The acceptance angle everyone quotes is wrong, and the error matters.** Textbooks give
+delta-rho ~= 4.5-5.7 degrees, but that is a prediction of the Snyder diffraction formula,
+not a measurement. Every intracellular recording gives 7.7-9.5 degrees: 8.23 (Gonzalez-
+Bellido 2011), 9.47 dark / 7.70 light (Juusola 2017). So delta-rho / delta-phi is about
+1.7-2.0, not ~1 -- the fly is a heavily *blurred* sampler whose acceptance functions
+overlap their neighbours substantially. Using 5 degrees makes the eye look far sharper
+than it is and makes a camera look worse at matching it than it really is. The default
+here is the measured 8.2.
+
+Counts verified directly against male-CNS v1.0 rather than taken from a paper: the right
+eye carries 892 distinct hex columns and 886 Mi1 cells (Mi1 tiles 1:1 with columns), the
+left 879. Column coordinates live in ``assignedOlHex1``/``assignedOlHex2``.
 
 So the optic-lobe circuits cannot be driven by raw pixels. Something has to resample the
 sensor into the lattice the circuit was wired for, and that something is a sparse matrix
@@ -22,8 +33,11 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-DROSOPHILA = dict(n_ommatidia=800, delta_phi_deg=5.0, delta_rho_deg=5.0,
-                  fov_azimuth_deg=180.0, fov_elevation_deg=140.0)
+#: Measured, not predicted. delta_rho from intracellular recordings (Gonzalez-Bellido
+#: 2011: 8.23 deg); column count from male-CNS v1.0 directly.
+DROSOPHILA = dict(n_ommatidia=886, n_columns_left=879, n_columns_right=892,
+                  delta_phi_deg=4.63, delta_rho_deg=8.2,
+                  rho_over_phi=1.77, fov_azimuth_deg=180.0, fov_elevation_deg=140.0)
 
 
 @dataclass
@@ -39,9 +53,9 @@ class Retina:
         return len(self.azimuth)
 
 
-def hex_lattice(n_target: int = 400, delta_phi_deg: float = 5.0,
+def hex_lattice(n_target: int = 886, delta_phi_deg: float = 4.63,
                 fov_az_deg: float = 180.0, fov_el_deg: float = 140.0,
-                eye: str = "L", delta_rho_deg: float = 5.0) -> Retina:
+                eye: str = "L", delta_rho_deg: float = 8.2) -> Retina:
     """Build a hexagonal lattice of viewing directions for one eye.
 
     Rows are offset by half a column spacing, which is what makes the packing hexagonal

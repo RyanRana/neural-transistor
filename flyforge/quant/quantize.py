@@ -50,9 +50,12 @@ class QuantReport:
     edges_after: int
     synapses_before: int
     synapses_after: int
-    drive_rel_err_mean: float
+    drive_rel_err_mean: float      # normalised by TOTAL |drive| -- the stable one
     drive_rel_err_p95: float
     drive_rel_err_max: float
+    drive_signed_err_mean: float   # normalised by the signed sum -- unstable, kept for comparison
+    drive_corr: float              # pearson r between original and compressed drive
+    drive_sign_agreement: float
     drive_sign_flips: int
     bytes_before: int
     bytes_after: int
@@ -77,7 +80,8 @@ class QuantReport:
             f"({self.compression:.2f}x) | edges {self.edge_retention:.1%} "
             f"synapses {self.synapse_retention:.1%} | "
             f"drive err mean {self.drive_rel_err_mean:.3%} "
-            f"p95 {self.drive_rel_err_p95:.3%} | sign flips {self.drive_sign_flips}"
+            f"p95 {self.drive_rel_err_p95:.3%} | r={self.drive_corr:.4f} "
+            f"sign agree {self.drive_sign_agreement:.3%} | flips {self.drive_sign_flips}"
         )
 
 
@@ -87,6 +91,38 @@ def input_drive(ir: CircuitIR, weight: Optional[np.ndarray] = None) -> np.ndarra
     src = np.repeat(np.arange(ir.n_neurons, dtype=np.int32), np.diff(ir.indptr))
     signed = ir.sign[src].astype(np.float64) * w.astype(np.float64)
     return np.bincount(ir.indices, weights=signed, minlength=ir.n_neurons)
+
+
+def total_drive(ir: CircuitIR, weight: Optional[np.ndarray] = None) -> np.ndarray:
+    """Total UNSIGNED synaptic drive arriving at each neuron.
+
+    The scale of a neuron's input, used as the denominator for drive error. Unlike the
+    signed sum this cannot collapse toward zero for a balanced neuron, so it does not
+    manufacture enormous relative errors out of small absolute ones.
+    """
+    w = ir.weight if weight is None else weight
+    return np.bincount(ir.indices, weights=np.abs(w.astype(np.float64)),
+                       minlength=ir.n_neurons)
+
+
+def drive_error(d0: np.ndarray, d1: np.ndarray, scale: np.ndarray) -> dict:
+    """Compare two drive vectors on the stable normalisation, plus shape metrics."""
+    ok = scale > 0
+    rel = np.zeros_like(d0)
+    rel[ok] = np.abs(d1[ok] - d0[ok]) / scale[ok]
+    nzs = np.abs(d0) > 1e-9
+    signed_rel = np.abs(d1[nzs] - d0[nzs]) / np.abs(d0[nzs]) if nzs.any() else np.zeros(1)
+    corr = float(np.corrcoef(d0, d1)[0, 1]) if d0.std() > 0 and d1.std() > 0 else 1.0
+    agree = float((np.sign(d0[nzs]) == np.sign(d1[nzs])).mean()) if nzs.any() else 1.0
+    return {
+        "mean": float(rel[ok].mean()) if ok.any() else 0.0,
+        "p95": float(np.percentile(rel[ok], 95)) if ok.any() else 0.0,
+        "max": float(rel[ok].max()) if ok.any() else 0.0,
+        "signed_mean": float(signed_rel.mean()),
+        "corr": corr,
+        "sign_agreement": agree,
+        "sign_flips": int(((np.sign(d0) * np.sign(d1)) < 0).sum()),
+    }
 
 
 def prune(ir: CircuitIR, min_weight: int) -> CircuitIR:
@@ -210,10 +246,7 @@ def compress(
     deq = book[codes] if scheme != "passthrough" else out.weight.astype(np.float32)
 
     d1 = input_drive(out, weight=deq)
-    nz = np.abs(d0) > 1e-9
-    rel = np.zeros_like(d0)
-    rel[nz] = np.abs(d1[nz] - d0[nz]) / np.abs(d0[nz])
-    flips = int(((np.sign(d0) * np.sign(d1)) < 0).sum())
+    err = drive_error(d0, d1, total_drive(ir))
 
     ibits = index_bits_needed(out, delta=delta_index)
     after_bytes = out.footprint(weight_bits=weight_bits, index_bits=ibits)["total_B"]
@@ -228,10 +261,10 @@ def compress(
         prune_min_weight=prune_min_weight,
         edges_before=ir.n_edges, edges_after=out.n_edges,
         synapses_before=ir.n_synapses, synapses_after=int(deq.sum()),
-        drive_rel_err_mean=float(rel[nz].mean()) if nz.any() else 0.0,
-        drive_rel_err_p95=float(np.percentile(rel[nz], 95)) if nz.any() else 0.0,
-        drive_rel_err_max=float(rel[nz].max()) if nz.any() else 0.0,
-        drive_sign_flips=flips,
+        drive_rel_err_mean=err["mean"], drive_rel_err_p95=err["p95"],
+        drive_rel_err_max=err["max"], drive_signed_err_mean=err["signed_mean"],
+        drive_corr=err["corr"], drive_sign_agreement=err["sign_agreement"],
+        drive_sign_flips=err["sign_flips"],
         bytes_before=before_bytes, bytes_after=after_bytes,
     )
     return out, rep
